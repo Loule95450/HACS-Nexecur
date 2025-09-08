@@ -1,0 +1,12 @@
+{
+  "domain": "nexecur",
+  "name": "Nexecur Unofficial",
+  "version": "0.1.0",
+  "documentation": "https://github.com/Loule95450/Nexecur-Unofficial-API",
+  "issue_tracker": "https://github.com/Loule95450/Nexecur-Unofficial-API/issues",
+  "requirements": [],
+  "codeowners": ["@Loule95450"],
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "loggers": ["custom_components.nexecur"]
+}

@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nexecur",
+        "description": "Enter your Nexecur credentials",
+        "data": {
+          "id_site": "Site ID (wiring code)",
+          "password": "PIN / Password",
+          "device_name": "Device name"
+        }
+      }
+    },
+    "error": {
+      "auth": "Authentication failed",
+      "unknown": "Unknown error"
+    }
+  }
+}
