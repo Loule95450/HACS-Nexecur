@@ -1,12 +1,10 @@
-# Nexecur Unofficial API
+# Home Assistant (HACS) custom integration
 
-![GitHub release](https://img.shields.io/github/release/Loule95450/Nexecur-Unofficial-API.svg)
-![GitHub repo size in bytes](https://img.shields.io/github/repo-size/Loule95450/Nexecur-Unofficial-API.svg)
-![GitHub](https://img.shields.io/github/license/Loule95450/Nexecur-Unofficial-API.svg)
+![GitHub release](https://img.shields.io/github/release/Loule95450/HACS-Nexecur.svg)
+![GitHub repo size in bytes](https://img.shields.io/github/repo-size/Loule95450/HACS-Nexecur.svg)
+![GitHub](https://img.shields.io/github/license/Loule95450/HACS-Nexecur.svg)
 
 This is an unofficial API for the Nexecur system, forked from a deleted repository originally created by Baudev. This fork for HomeAssistant is maintained by Loule95450.
-
-## Home Assistant (HACS) custom integration
 
 You can now install and use this API as a Home Assistant integration via HACS.
 
@@ -19,7 +17,7 @@ What you get:
 Installation (via HACS):
 
 1. In HACS, add this repository as a Custom Repository (category: Integration).
-2. Install the "Nexecur Unofficial" integration.
+2. Install the "Nexecur" integration.
 3. Restart Home Assistant.
 4. Go to Settings > Devices & Services > Add Integration > search for "Nexecur".
 5. Enter your credentials:
