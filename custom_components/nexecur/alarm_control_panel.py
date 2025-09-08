@@ -30,6 +30,8 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
     _attr_has_entity_name = True
     _attr_name = DEFAULT_NAME
     _attr_supported_features = AlarmControlPanelEntityFeature.ARM_AWAY
+    _attr_code_arm_required = False
+    _attr_code_disarm_required = False
 
     def __init__(self, client: NexecurClient, coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -45,6 +47,19 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             return None
         status = int(data.get("panel_status", 0))
         return "armed_away" if status == 1 else "disarmed"
+
+    @property
+    def code_format(self) -> str | None:
+        # No code required in UI; the client handles auth/pin internally
+        return None
+
+    @property
+    def code_arm_required(self) -> bool:
+        return False
+
+    @property
+    def code_disarm_required(self) -> bool:
+        return False
 
     @property
     def device_info(self) -> dict[str, Any]:
