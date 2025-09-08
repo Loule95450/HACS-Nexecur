@@ -5,7 +5,7 @@
         "title": "Nexecur",
         "description": "Renseignez vos identifiants Nexecur",
         "data": {
-          "id_site": "ID Site (code de câblage)",
+          "id_site": "ID Site (code de raccordement)",
           "password": "PIN / Mot de passe",
           "device_name": "Nom de l'appareil"
         }
