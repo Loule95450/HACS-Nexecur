@@ -1,9 +1,9 @@
 {
   "domain": "nexecur",
   "name": "Nexecur Unofficial",
-  "version": "0.1.0",
-  "documentation": "https://github.com/Loule95450/Nexecur-Unofficial-API",
-  "issue_tracker": "https://github.com/Loule95450/Nexecur-Unofficial-API/issues",
+  "version": "0.1.1",
+  "documentation": "https://github.com/Loule95450/HACS-Nexecur",
+  "issue_tracker": "https://github.com/Loule95450/HACS-Nexecur/issues",
   "requirements": [],
   "codeowners": ["@Loule95450"],
   "iot_class": "cloud_polling",
