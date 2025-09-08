@@ -190,3 +190,7 @@ class NexecurClient:
     @property
     def id_device(self) -> str:
         return self._id_device
+
+    @property
+    def token(self) -> str:
+        return self._token

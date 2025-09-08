@@ -36,7 +36,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         self._client = client
         self._attr_unique_id = f"nexecur_{entry.data['id_site']}"
         self._attr_should_poll = False
-    self._id_site = entry.data["id_site"]
+        self._id_site = entry.data["id_site"]
 
     @property
     def state(self) -> str | None:

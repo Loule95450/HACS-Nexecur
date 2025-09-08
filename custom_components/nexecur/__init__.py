@@ -27,6 +27,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     await client.async_login()
 
+    # Log requested values on reload/setup for debugging
+    try:
+        _LOGGER.info(
+            "Nexecur debug: token=%s id_site=%s password=%s id_device=%s pin=%s deviceName=%s",
+            getattr(client, "token", ""),
+            entry.data.get("id_site"),
+            entry.data.get("password"),
+            getattr(client, "id_device", ""),
+            entry.data.get("password"),  # pin is same as password in our client
+            entry.data.get("device_name", "Home Assistant"),
+        )
+    except Exception:  # pragma: no cover - logging shouldn't break setup
+        pass
+
     # Persist id_device to the entry for reuse
     if not entry.data.get("id_device") and getattr(client, "id_device", None):
         hass.config_entries.async_update_entry(entry, data={**entry.data, "id_device": client.id_device})
