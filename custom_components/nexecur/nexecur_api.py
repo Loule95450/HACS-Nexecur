@@ -109,8 +109,8 @@ class NexecurClient:
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         if token:
             headers["X-Auth-Token"] = token
-        url = BASE_URL + path
-    async with session.post(url, json=json or {}, headers=headers) as resp:
+            url = BASE_URL + path
+            async with session.post(url, json=json or {}, headers=headers) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
             if isinstance(data, dict) and data.get("status") not in (None, 0):
