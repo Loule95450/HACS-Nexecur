@@ -12,7 +12,9 @@ What you get:
 
 - An Alarm control panel entity that shows the current state (armed/disarmed)
 - Actions to arm and disarm the alarm from Home Assistant
-- Automatic polling of the panel status (every 30 seconds by default)
+- Camera entities for viewing RTSP streams from Nexecur cameras
+- Automatic polling of the panel status and camera streams (every 30 seconds by default)
+- Dynamic discovery of new cameras when they are added to your system
 
 Installation (via HACS):
 
@@ -25,12 +27,22 @@ Installation (via HACS):
    - password (PIN). Note: it is used to derive the secure hashes required by Nexecur.
    - deviceName (optional, used to register this instance with Nexecur; defaults to "Home Assistant").
 
-Entity: after setup, you should see an alarm entity like alarm_control_panel.nexecur_alarm. Use it to arm/disarm.
+Entity: after setup, you should see:
+- An alarm entity like `alarm_control_panel.nexecur_alarm` to arm/disarm the system
+- Camera entities like `camera.nexecur_camera_{site_id}_{serial}` for each discovered camera with streaming capability
+
+Camera Features:
+- RTSP streams are automatically refreshed every 30 seconds to maintain connection
+- New cameras are automatically discovered when added to your Nexecur system
+- Camera entities show as unavailable when the stream is not accessible
+- Stream URLs are provided to Home Assistant's camera platform for viewing
 
 Troubleshooting:
 
 - If login fails, double‑check id_site and your PIN. The integration derives cryptographic hashes based on the server-provided salt.
 - The integration talks to the official Nexecur endpoints used by the mobile app. If Nexecur changes those endpoints, the integration may need an update.
+- If cameras are not discovered, ensure your Nexecur system has streaming enabled and that cameras are properly configured.
+- Camera streams may take up to 30 seconds to appear after being added to the system due to the polling interval.
 
 ## License
 
