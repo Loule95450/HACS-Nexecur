@@ -199,14 +199,19 @@ class NexecurClient:
         await self._ensure_token_valid()
         payload = {"serial": device_serial}
         try:
+            _LOGGER.info("Requesting stream for device %s with payload: %s", device_serial, payload)
             data = await self._post_json(STREAM_URI, json=payload, token=self._token)
+            _LOGGER.info("Stream response for device %s: %s", device_serial, data)
+            
             if data.get("message") == "OK" and data.get("status") == 0:
-                return data.get("uri")
+                stream_url = data.get("uri")
+                _LOGGER.info("Stream URL for device %s: %s", device_serial, stream_url)
+                return stream_url
             else:
-                _LOGGER.debug("Stream request failed for device %s: %s", device_serial, data)
+                _LOGGER.warning("Stream request failed for device %s: %s", device_serial, data)
                 return None
         except Exception as err:
-            _LOGGER.debug("Exception getting stream for device %s: %s", device_serial, err)
+            _LOGGER.error("Exception getting stream for device %s: %s", device_serial, err)
             return None
 
     # --- Properties ---

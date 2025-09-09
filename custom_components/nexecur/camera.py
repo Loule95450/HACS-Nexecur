@@ -23,23 +23,31 @@ async def async_setup_entry(
     # Track created entities to avoid duplicates
     created_entities = set()
     
+    _LOGGER.info("Setting up Nexecur camera platform")
+    
     @callback
     def add_new_cameras():
         """Add new camera entities when discovered."""
         if not coordinator.data:
+            _LOGGER.info("No coordinator data available yet")
             return
             
         camera_streams = coordinator.data.get("camera_streams", {})
+        _LOGGER.info("Camera platform: Found %d camera streams: %s", len(camera_streams), list(camera_streams.keys()))
+        
         new_entities = []
         
         for device_serial, stream_data in camera_streams.items():
             if device_serial not in created_entities:
+                _LOGGER.info("Creating camera entity for device %s", device_serial)
                 new_entities.append(NexecurCamera(coordinator, entry, device_serial, stream_data))
                 created_entities.add(device_serial)
         
         if new_entities:
             _LOGGER.info("Adding %d new Nexecur camera(s)", len(new_entities))
             async_add_entities(new_entities)
+        else:
+            _LOGGER.info("No new camera entities to add")
     
     # Add any cameras that are already discovered
     add_new_cameras()
