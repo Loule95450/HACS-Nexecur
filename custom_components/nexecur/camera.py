@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 from homeassistant.components.camera import Camera, CameraEntityFeature
 from homeassistant.config_entries import ConfigEntry
@@ -27,23 +27,29 @@ async def async_setup_entry(
     client: NexecurClient = data["client"]
     coordinator = data["coordinator"]
 
-    # Discover cameras from the last site response held by the coordinator
-    site_data = coordinator.data or {}
-    cameras = site_data.get("cameras") or []
+    known_serials: Set[str] = data.setdefault("camera_known_serials", set())
 
-    entities: list[NexecurCamera] = []
-    for cam in cameras:
-        # Expect cam to include 'serial' and 'name'
-        serial = cam.get("serial") or cam.get("device_serial") or cam.get("id")
-        name = cam.get("name") or f"Nexecur Camera {serial}"
-        if not serial:
-            continue
-        entities.append(NexecurCamera(client, entry, serial, name))
+    async def discover_and_add() -> None:
+        site = coordinator.data or {}
+        cameras = site.get("cameras") or []
+        new_entities: list[NexecurCamera] = []
+        for cam in cameras:
+            serial = cam.get("serial") or cam.get("device_serial") or cam.get("id")
+            if not serial or serial in known_serials:
+                continue
+            name = cam.get("name") or f"Nexecur Camera {serial}"
+            known_serials.add(serial)
+            new_entities.append(NexecurCamera(client, entry, serial, name))
 
-    if not entities:
-        _LOGGER.info("No cameras discovered for Nexecur site %s", entry.data.get("id_site"))
+        if new_entities:
+            async_add_entities(new_entities)
 
-    async_add_entities(entities)
+    # Initial discovery
+    await discover_and_add()
+
+    # Keep discovering on coordinator updates (new cameras appearing later)
+    remove_listener = coordinator.async_add_listener(lambda: entry.hass.async_create_task(discover_and_add()))
+    entry.async_on_unload(remove_listener)
 
 
 class NexecurCamera(CoordinatorEntity, Camera):
