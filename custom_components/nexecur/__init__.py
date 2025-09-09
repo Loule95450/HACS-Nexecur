@@ -49,7 +49,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             state = await client.async_get_status()
             # Coordinator data is a dict for easy consumption by entities
-            data = {"panel_status": state.status, **(state.raw or {})}
+            data = {
+                "panel_status": state.status, 
+                "panel_sp2_available": state.panel_sp2_available,
+                **(state.raw or {})
+            }
             
             # Extract devices and cameras from site data and fetch stream URLs
             raw_data = state.raw or {}

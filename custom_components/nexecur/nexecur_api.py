@@ -31,6 +31,7 @@ class NexecurAuthError(NexecurError):
 @dataclass
 class NexecurState:
     status: int  # 0 disabled, 1 enabled
+    panel_sp2_available: bool  # True if total alarm (sp2) is available
     raw: Dict[str, Any]
 
 class NexecurClient:
@@ -83,11 +84,22 @@ class NexecurClient:
         pwd_hash, pin_hash = self._compute_hashes(self._password_plain, salt)
         data = await self._site(pwd_hash, pin_hash)
         status = int(data.get("panel_status", 0))
-        return NexecurState(status=status, raw=data)
+        panel_sp2_available = bool(int(data.get("panel_sp2", 0)))
+        return NexecurState(status=status, panel_sp2_available=panel_sp2_available, raw=data)
 
     async def async_set_armed(self, armed: bool) -> None:
         await self._ensure_token_valid()
         await self._panel_status(1 if armed else 0)
+
+    async def async_set_armed_home(self) -> None:
+        """Set alarm to home mode (partial arming) using sp1."""
+        await self._ensure_token_valid()
+        await self._panel_action("sp1")
+
+    async def async_set_armed_away(self) -> None:
+        """Set alarm to away mode (full arming) using sp2."""
+        await self._ensure_token_valid()
+        await self._panel_action("sp2")
 
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
@@ -172,6 +184,16 @@ class NexecurClient:
         data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
         if data.get("message") != "OK" or data.get("status") != 0:
             raise NexecurError("Error while sending panel status")
+        # If pending, poll until done or timeout
+        if int(data.get("pending", 0)) != 0:
+            await self._wait_panel_done()
+
+    async def _panel_action(self, action: str) -> None:
+        """Send sp1 or sp2 action to the panel."""
+        body = {"action": action}
+        data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
+        if data.get("message") != "OK" or data.get("status") != 0:
+            raise NexecurError(f"Error while sending panel action {action}")
         # If pending, poll until done or timeout
         if int(data.get("pending", 0)) != 0:
             await self._wait_panel_done()
