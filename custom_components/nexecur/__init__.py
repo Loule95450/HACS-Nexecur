@@ -49,7 +49,56 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             state = await client.async_get_status()
             # Coordinator data is a dict for easy consumption by entities
-            return {"panel_status": state.status, **(state.raw or {})}
+            data = {"panel_status": state.status, **(state.raw or {})}
+            
+            # Extract devices and cameras from site data and fetch stream URLs
+            raw_data = state.raw or {}
+            devices = raw_data.get("devices", [])
+            cameras = raw_data.get("cameras", [])
+            camera_streams = {}
+            
+            # Check panel streaming capability
+            panel_streaming = raw_data.get("panel_streaming", 0)
+            streaming_available = raw_data.get("streaming_available", 0)
+            
+            if panel_streaming and streaming_available:
+                # Process explicit cameras array first
+                for camera in cameras:
+                    camera_serial = camera.get("serial")
+                    if camera_serial:
+                        stream_url = await client.async_get_stream(camera_serial)
+                        if stream_url:
+                            camera_streams[camera_serial] = {
+                                "stream_url": stream_url,
+                                "device_info": camera,
+                                "source": "cameras"
+                            }
+                            _LOGGER.debug("Found camera stream for device %s: %s", camera_serial, stream_url)
+                
+                # Also check devices for any that might have streaming capability
+                for device in devices:
+                    device_serial = device.get("serial")
+                    device_name = device.get("name", "").lower()
+                    
+                    # Skip if already found in cameras array
+                    if device_serial and device_serial not in camera_streams:
+                        # Check if this looks like a camera device
+                        if ("camera" in device_name or "cam" in device_name or 
+                            device.get("streaming_enabled") or device.get("type", "").lower() in ["camera", "cam"]):
+                            stream_url = await client.async_get_stream(device_serial)
+                            if stream_url:
+                                camera_streams[device_serial] = {
+                                    "stream_url": stream_url,
+                                    "device_info": device,
+                                    "source": "devices"
+                                }
+                                _LOGGER.debug("Found device stream for device %s: %s", device_serial, stream_url)
+            
+            data["camera_streams"] = camera_streams
+            data["devices"] = devices
+            data["cameras"] = cameras
+            
+            return data
         except NexecurError as err:
             _LOGGER.warning("Nexecur update failed: %s", err)
             raise

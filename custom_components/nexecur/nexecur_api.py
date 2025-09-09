@@ -18,6 +18,7 @@ SITE_URI = "/webservices/site"
 REGISTER_URI = "/webservices/register"
 PANEL_STATUS_URI = "/webservices/panel-status"
 PANEL_CHECK_STATUS_URI = "/webservices/check-panel-status"
+STREAM_URI = "/webservices/stream"
 
 MAX_WAIT_SECONDS = 60
 
@@ -185,6 +186,28 @@ class NexecurClient:
     async def _ensure_token_valid(self) -> None:
         if not self._token:
             await self._ensure_device()
+
+    async def async_get_stream(self, device_serial: str) -> Optional[str]:
+        """Get stream URL for a device by its serial number.
+        
+        Args:
+            device_serial: Serial number of the device (camera)
+            
+        Returns:
+            RTSP stream URL if successful, None if failed
+        """
+        await self._ensure_token_valid()
+        payload = {"serial": device_serial}
+        try:
+            data = await self._post_json(STREAM_URI, json=payload, token=self._token)
+            if data.get("message") == "OK" and data.get("status") == 0:
+                return data.get("uri")
+            else:
+                _LOGGER.debug("Stream request failed for device %s: %s", device_serial, data)
+                return None
+        except Exception as err:
+            _LOGGER.debug("Exception getting stream for device %s: %s", device_serial, err)
+            return None
 
     # --- Properties ---
     @property
