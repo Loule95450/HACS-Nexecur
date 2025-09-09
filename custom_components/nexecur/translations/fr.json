@@ -7,7 +7,8 @@
         "data": {
           "id_site": "ID Site (code de câblage)",
           "password": "PIN / Mot de passe",
-          "device_name": "Nom de l'appareil"
+          "device_name": "Nom de l'appareil",
+          "disarm_code": "Code de désactivation (facultatif)"
         }
       }
     },

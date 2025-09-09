@@ -4,7 +4,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 
-from .const import DOMAIN, CONF_ID_SITE, CONF_PASSWORD, CONF_DEVICE_NAME
+from .const import DOMAIN, CONF_ID_SITE, CONF_PASSWORD, CONF_DEVICE_NAME, CONF_DISARM_CODE
 from .nexecur_api import NexecurClient, NexecurAuthError
 
 DATA_SCHEMA = vol.Schema(
@@ -12,6 +12,7 @@ DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_ID_SITE): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
+        vol.Optional(CONF_DISARM_CODE): str,
     }
 )
 
