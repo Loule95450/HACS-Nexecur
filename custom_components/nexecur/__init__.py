@@ -25,7 +25,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_name=entry.data.get("device_name", "Home Assistant"),
         session=session,
     )
-    await client.async_login()
+    try:
+        await client.async_login()
+    except NexecurError as err:
+        _LOGGER.warning("Nexecur login failed during setup: %s. Continuing so entities can be created (they will be unavailable).", err)
 
     # Log requested values on reload/setup for debugging
     try:
@@ -52,7 +55,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return {"panel_status": state.status, **(state.raw or {})}
         except NexecurError as err:
             _LOGGER.warning("Nexecur update failed: %s", err)
-            raise
+            # Do not raise here to allow setup to complete; return empty data
+            return {}
 
     coordinator = DataUpdateCoordinator(
         hass,
@@ -61,7 +65,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=async_update,
         update_interval=SCAN_INTERVAL,
     )
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:  # allow platform setup even if first refresh fails
+        _LOGGER.warning("First refresh failed; entities will start unavailable: %s", err)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,

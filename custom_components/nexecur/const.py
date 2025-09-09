@@ -1,5 +1,7 @@
+from homeassistant.const import Platform
+
 DOMAIN = "nexecur"
-PLATFORMS = ["alarm_control_panel", "camera"]
+PLATFORMS = [Platform.ALARM_CONTROL_PANEL, Platform.CAMERA]
 DEFAULT_NAME = "Nexecur Alarm"
 
 CONF_ID_SITE = "id_site"
