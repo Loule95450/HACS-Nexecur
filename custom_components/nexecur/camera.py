@@ -63,10 +63,7 @@ class NexecurCamera(CoordinatorEntity, Camera):
 
     def __init__(self, coordinator, entry: ConfigEntry, device_serial: str, device_data: dict) -> None:
         """Initialize the camera."""
-        # Initialize Camera first to ensure all required attributes are set
-        Camera.__init__(self)
         super().__init__(coordinator)
-        
         self._device_serial = device_serial
         self._attr_unique_id = f"nexecur_camera_{entry.data['id_site']}_{device_serial}"
         self._id_site = entry.data["id_site"]
