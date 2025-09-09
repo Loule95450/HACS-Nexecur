@@ -32,15 +32,15 @@ async def async_setup_entry(
             _LOGGER.info("No coordinator data available yet")
             return
             
-        camera_devices = coordinator.data.get("camera_devices", {})
-        _LOGGER.info("Camera platform: Found %d camera devices: %s", len(camera_devices), list(camera_devices.keys()))
+        camera_streams = coordinator.data.get("camera_streams", {})
+        _LOGGER.info("Camera platform: Found %d camera streams: %s", len(camera_streams), list(camera_streams.keys()))
         
         new_entities = []
         
-        for device_serial, device_data in camera_devices.items():
+        for device_serial, stream_data in camera_streams.items():
             if device_serial not in created_entities:
                 _LOGGER.info("Creating camera entity for device %s", device_serial)
-                new_entities.append(NexecurCamera(coordinator, entry, device_serial, device_data))
+                new_entities.append(NexecurCamera(coordinator, entry, device_serial, stream_data))
                 created_entities.add(device_serial)
         
         if new_entities:
@@ -61,16 +61,18 @@ class NexecurCamera(CoordinatorEntity, Camera):
     _attr_has_entity_name = True
     _attr_supported_features = CameraEntityFeature.STREAM
 
-    def __init__(self, coordinator, entry: ConfigEntry, device_serial: str, device_data: dict) -> None:
+    def __init__(self, coordinator, entry: ConfigEntry, device_serial: str, stream_data: dict) -> None:
         """Initialize the camera."""
+        # Initialize Camera first to ensure all required attributes are set
+        Camera.__init__(self)
         super().__init__(coordinator)
+        
         self._device_serial = device_serial
         self._attr_unique_id = f"nexecur_camera_{entry.data['id_site']}_{device_serial}"
         self._id_site = entry.data["id_site"]
-        self._entry = entry
         
         # Set name from device info if available
-        device_info = device_data.get("device_info", {})
+        device_info = stream_data.get("device_info", {})
         device_name = device_info.get("name") or device_info.get("nom") or f"Camera {device_serial}"
         self._attr_name = device_name
 
@@ -91,8 +93,8 @@ class NexecurCamera(CoordinatorEntity, Camera):
         if not self.coordinator.last_update_success:
             return False
         
-        camera_devices = self.coordinator.data.get("camera_devices", {}) if self.coordinator.data else {}
-        return self._device_serial in camera_devices
+        camera_streams = self.coordinator.data.get("camera_streams", {}) if self.coordinator.data else {}
+        return self._device_serial in camera_streams and camera_streams[self._device_serial].get("stream_url") is not None
 
     @property
     def is_streaming(self) -> bool:
@@ -104,30 +106,15 @@ class NexecurCamera(CoordinatorEntity, Camera):
         if not self.coordinator.data:
             return None
             
-        camera_devices = self.coordinator.data.get("camera_devices", {})
-        device_data = camera_devices.get(self._device_serial)
+        camera_streams = self.coordinator.data.get("camera_streams", {})
+        stream_data = camera_streams.get(self._device_serial, {})
+        stream_url = stream_data.get("stream_url")
         
-        if not device_data:
-            return None
+        # Log stream URL for debugging (but don't expose full URL for security)
+        if stream_url:
+            _LOGGER.debug("Providing stream for camera %s", self._device_serial)
         
-        # Get fresh stream URL since they expire every 5 seconds
-        _LOGGER.debug("Fetching fresh stream URL for camera %s (URLs expire every 5 seconds)", self._device_serial)
-        
-        # Get the client from the coordinator's hass data
-        hass_data = self.hass.data[DOMAIN][self._entry.entry_id]
-        client = hass_data["client"]
-        
-        try:
-            stream_url = await client.async_get_stream(self._device_serial)
-            if stream_url:
-                _LOGGER.debug("✓ Fresh stream URL obtained for camera %s", self._device_serial)
-                return stream_url
-            else:
-                _LOGGER.warning("✗ Unable to get stream URL for camera %s", self._device_serial)
-                return None
-        except Exception as err:
-            _LOGGER.error("Error fetching stream URL for camera %s: %s", self._device_serial, err)
-            return None
+        return stream_url
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -135,16 +122,16 @@ class NexecurCamera(CoordinatorEntity, Camera):
         if not self.coordinator.data:
             return {}
             
-        camera_devices = self.coordinator.data.get("camera_devices", {})
-        device_data = camera_devices.get(self._device_serial, {})
-        device_info = device_data.get("device_info", {})
+        camera_streams = self.coordinator.data.get("camera_streams", {})
+        stream_data = camera_streams.get(self._device_serial, {})
+        device_info = stream_data.get("device_info", {})
         
         return {
             "device_serial": self._device_serial,
+            "has_stream": bool(stream_data.get("stream_url")),
             "device_type": device_info.get("type"),
             "streaming_enabled": device_info.get("streaming_enabled"),
-            "source": device_data.get("source"),
-            "stream_url_note": "Stream URLs are fetched fresh each time (expire every 5 seconds)",
+            "source": stream_data.get("source"),
         }
 
     async def async_camera_image(
