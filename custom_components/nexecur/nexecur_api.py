@@ -18,6 +18,7 @@ SITE_URI = "/webservices/site"
 REGISTER_URI = "/webservices/register"
 PANEL_STATUS_URI = "/webservices/panel-status"
 PANEL_CHECK_STATUS_URI = "/webservices/check-panel-status"
+STREAM_URI = "/webservices/stream"
 
 MAX_WAIT_SECONDS = 60
 
@@ -95,6 +96,7 @@ class NexecurClient:
         if token:
             headers["X-Auth-Token"] = token
         url = BASE_URL + path
+        _LOGGER.debug("Making request to %s with headers: %s", url, {k: v for k, v in headers.items() if k != "X-Auth-Token"})
         async with session.post(url, json=json or {}, headers=headers) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
@@ -185,6 +187,62 @@ class NexecurClient:
     async def _ensure_token_valid(self) -> None:
         if not self._token:
             await self._ensure_device()
+
+    async def async_get_stream(self, device_serial: str) -> Optional[str]:
+        """Get stream URL for a device by its serial number.
+        
+        Args:
+            device_serial: Serial number of the device (camera)
+            
+        Returns:
+            RTSP stream URL if successful, None if failed
+        """
+        await self._ensure_token_valid()
+        
+        # Try multiple request formats in case one is expected
+        request_variations = [
+            {"serial": device_serial},
+            {"device": device_serial},
+            {"device_serial": device_serial},
+            {"id": device_serial},
+        ]
+        
+        for i, payload in enumerate(request_variations):
+            try:
+                _LOGGER.info("Requesting stream for device %s (attempt %d) with payload: %s", device_serial, i+1, payload)
+                data = await self._post_json(STREAM_URI, json=payload, token=self._token)
+                _LOGGER.info("Stream response for device %s (attempt %d): %s", device_serial, i+1, data)
+                
+                # Check for success response
+                if data.get("message") == "OK" and data.get("status") == 0:
+                    stream_url = data.get("uri")
+                    if stream_url:
+                        _LOGGER.info("✓ Stream URL found for device %s: %s", device_serial, stream_url)
+                        return stream_url
+                
+                # Check for other possible success indicators
+                if "uri" in data and data["uri"]:
+                    stream_url = data["uri"]
+                    _LOGGER.info("✓ Stream URL found for device %s (no status check): %s", device_serial, stream_url)
+                    return stream_url
+                
+                # If status indicates error, try next variation
+                if data.get("status") != 0:
+                    _LOGGER.info("Status error (%s) for device %s attempt %d, trying next format", data.get("status"), device_serial, i+1)
+                    continue
+                else:
+                    # Status is 0 but no URI, this might be the expected format but device doesn't support streaming
+                    _LOGGER.info("Device %s returned OK status but no URI - likely doesn't support streaming", device_serial)
+                    return None
+                    
+            except Exception as err:
+                _LOGGER.warning("Exception getting stream for device %s (attempt %d): %s", device_serial, i+1, err)
+                if i == len(request_variations) - 1:  # Last attempt
+                    return None
+                continue
+        
+        _LOGGER.info("All stream request formats failed for device %s", device_serial)
+        return None
 
     # --- Properties ---
     @property

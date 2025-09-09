@@ -49,7 +49,63 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             state = await client.async_get_status()
             # Coordinator data is a dict for easy consumption by entities
-            return {"panel_status": state.status, **(state.raw or {})}
+            data = {"panel_status": state.status, **(state.raw or {})}
+            
+            # Extract devices and cameras from site data 
+            # Note: We no longer fetch stream URLs here because they expire every 5 seconds
+            # Stream URLs will be fetched on-demand by camera entities
+            raw_data = state.raw or {}
+            devices = raw_data.get("devices", [])
+            cameras = raw_data.get("cameras", [])
+            camera_devices = {}
+            
+            # Debug logging to understand the API response structure
+            _LOGGER.debug("Nexecur API response keys: %s", list(raw_data.keys()))
+            _LOGGER.debug("Nexecur devices count: %d", len(devices))
+            _LOGGER.debug("Nexecur cameras count: %d", len(cameras))
+            
+            # Collect all potential camera devices without testing streams
+            # (streams expire every 5 seconds, so we'll fetch them on-demand)
+            all_camera_devices = []
+            
+            # Add devices from cameras array
+            for camera in cameras:
+                if camera.get("serial"):
+                    all_camera_devices.append({
+                        "serial": camera["serial"],
+                        "info": camera,
+                        "source": "cameras"
+                    })
+            
+            # Add devices from devices array
+            for device in devices:
+                if device.get("serial"):
+                    # Check if not already added from cameras
+                    if not any(d["serial"] == device["serial"] for d in all_camera_devices):
+                        all_camera_devices.append({
+                            "serial": device["serial"],
+                            "info": device,
+                            "source": "devices"
+                        })
+            
+            # Store device info for camera entities (but not stream URLs)
+            for device_data in all_camera_devices:
+                device_serial = device_data["serial"]
+                device_info = device_data["info"]
+                source = device_data["source"]
+                
+                camera_devices[device_serial] = {
+                    "device_info": device_info,
+                    "source": source
+                }
+            
+            _LOGGER.info("Found %d potential camera devices", len(camera_devices))
+            
+            data["camera_devices"] = camera_devices
+            data["devices"] = devices
+            data["cameras"] = cameras
+            
+            return data
         except NexecurError as err:
             _LOGGER.warning("Nexecur update failed: %s", err)
             raise
