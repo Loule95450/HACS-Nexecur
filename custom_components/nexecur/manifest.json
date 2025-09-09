@@ -8,5 +8,6 @@
   "codeowners": ["@Loule95450"],
   "iot_class": "cloud_polling",
   "config_flow": true,
-  "loggers": ["custom_components.nexecur"]
+  "loggers": ["custom_components.nexecur"],
+  "dependencies": ["stream"]
 }

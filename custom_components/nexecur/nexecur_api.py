@@ -18,6 +18,7 @@ SITE_URI = "/webservices/site"
 REGISTER_URI = "/webservices/register"
 PANEL_STATUS_URI = "/webservices/panel-status"
 PANEL_CHECK_STATUS_URI = "/webservices/check-panel-status"
+STREAM_URI = "/webservices/stream"
 
 MAX_WAIT_SECONDS = 60
 
@@ -88,6 +89,20 @@ class NexecurClient:
         await self._ensure_token_valid()
         await self._panel_status(1 if armed else 0)
 
+    async def async_get_stream(self, serial: str) -> str:
+        """Return an RTSP URL for the given camera serial. Token must be valid.
+        The URL is short lived (~30s), caller should refresh periodically.
+        """
+        await self._ensure_token_valid()
+        body = {"serial": serial}
+        data = await self._post_json(STREAM_URI, json=body, token=self._token or None)
+        if data.get("message") != "OK" or data.get("status") != 0:
+            raise NexecurError(f"Failed to get stream for {serial}: {data}")
+        uri = data.get("uri")
+        if not uri:
+            raise NexecurError("No URI in stream response")
+        return uri
+
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
         session = await self._session_ensure()
@@ -95,7 +110,7 @@ class NexecurClient:
         if token:
             headers["X-Auth-Token"] = token
         url = BASE_URL + path
-        async with session.post(url, json=json or {}, headers=headers) as resp:
+    async with session.post(url, json=json or {}, headers=headers) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
             if isinstance(data, dict) and data.get("status") not in (None, 0):

@@ -13,6 +13,7 @@ What you get:
 - An Alarm control panel entity that shows the current state (armed/disarmed)
 - Actions to arm and disarm the alarm from Home Assistant
 - Automatic polling of the panel status (every 30 seconds by default)
+- Camera entities when your site has cameras; each camera exposes an RTSP stream via the Home Assistant Stream integration. The integration refreshes the short‑lived RTSP URL approximately every 25 seconds.
 
 Installation (via HACS):
 
@@ -31,6 +32,7 @@ Troubleshooting:
 
 - If login fails, double‑check id_site and your PIN. The integration derives cryptographic hashes based on the server-provided salt.
 - The integration talks to the official Nexecur endpoints used by the mobile app. If Nexecur changes those endpoints, the integration may need an update.
+- Cameras: streams are short‑lived URLs (~30s). The integration periodically refreshes them in the background. If you see the stream stop, try reopening the stream view; it should reconnect with a fresh URL.
 
 ## License
 
