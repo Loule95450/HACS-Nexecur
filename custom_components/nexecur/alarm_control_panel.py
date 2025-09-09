@@ -51,7 +51,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def code_format(self) -> str | None:
-        # Return appropriate format if disarm code is configured
+        # Return appropriate format if disarm code is configured and not empty
         if self._disarm_code:
             return "text"
         return None
@@ -62,7 +62,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def code_disarm_required(self) -> bool:
-        return self._disarm_code is not None
+        return bool(self._disarm_code)
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -78,8 +78,8 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         return dict(self.coordinator.data or {})
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
-        # Validate disarm code if configured
-        if self._disarm_code is not None:
+        # Validate disarm code if configured and not empty
+        if self._disarm_code:
             if code != self._disarm_code:
                 raise ServiceValidationError("Invalid disarm code")
         
