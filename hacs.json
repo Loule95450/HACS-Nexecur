@@ -2,7 +2,5 @@
   "name": "Nexecur",
   "content_in_root": false,
   "render_readme": true,
-  "domains": ["nexecur"],
-  "country": ["FR"],
-  "iot_class": "Cloud Polling"
+  "country": ["FR"]
 }
