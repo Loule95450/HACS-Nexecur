@@ -30,8 +30,9 @@ class NexecurAuthError(NexecurError):
 
 @dataclass
 class NexecurState:
-    status: int  # 0 disabled, 1 enabled
-    panel_sp2_available: bool  # True if total alarm (sp2) is available
+    status: int  # 0 disabled, 1 sp1 enabled, 2 sp2 enabled
+    panel_sp1_available: bool  # True if sp1 is available
+    panel_sp2_available: bool  # True if sp2 is available
     raw: Dict[str, Any]
 
 class NexecurClient:
@@ -84,8 +85,14 @@ class NexecurClient:
         pwd_hash, pin_hash = self._compute_hashes(self._password_plain, salt)
         data = await self._site(pwd_hash, pin_hash)
         status = int(data.get("panel_status", 0))
+        panel_sp1_available = bool(int(data.get("panel_sp1", 0)))
         panel_sp2_available = bool(int(data.get("panel_sp2", 0)))
-        return NexecurState(status=status, panel_sp2_available=panel_sp2_available, raw=data)
+        return NexecurState(
+            status=status, 
+            panel_sp1_available=panel_sp1_available,
+            panel_sp2_available=panel_sp2_available, 
+            raw=data
+        )
 
     async def async_set_armed(self, armed: bool) -> None:
         await self._ensure_token_valid()

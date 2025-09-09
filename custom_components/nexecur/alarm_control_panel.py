@@ -42,17 +42,23 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def supported_features(self) -> AlarmControlPanelEntityFeature:
-        """Return the list of supported features based on panel_sp2 availability."""
+        """Return the list of supported features based on panel SP availability."""
         data = self.coordinator.data
         if not data:
             return AlarmControlPanelEntityFeature.ARM_AWAY
         
+        panel_sp1_available = data.get("panel_sp1_available", True)  # Assume SP1 is available by default
         panel_sp2_available = data.get("panel_sp2_available", False)
+        
+        # If SP1 is not available, no alarm features are supported
+        if not panel_sp1_available:
+            return 0
+        
         if panel_sp2_available:
-            # When panel_sp2 is available, we support both HOME (sp1) and AWAY (sp2)
+            # When both SP1 and SP2 are available, we support both HOME (sp1) and AWAY (sp2)
             return AlarmControlPanelEntityFeature.ARM_HOME | AlarmControlPanelEntityFeature.ARM_AWAY
         else:
-            # When panel_sp2 is not available, only ARM_AWAY (which will use sp1)
+            # When only SP1 is available, only ARM_AWAY (which will use sp1)
             return AlarmControlPanelEntityFeature.ARM_AWAY
 
     @property
@@ -61,19 +67,24 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         if not data:
             return None
         status = int(data.get("panel_status", 0))
+        panel_sp1_available = data.get("panel_sp1_available", True)
         panel_sp2_available = data.get("panel_sp2_available", False)
         
         if status == 0:
             return AlarmControlPanelState.DISARMED
         elif status == 1:
-            # Status 1 = sp1 (home/partial arming)
+            # Status 1 = sp1 active
+            if not panel_sp1_available:
+                return AlarmControlPanelState.DISARMED  # Fallback if SP1 not available
             return AlarmControlPanelState.ARMED_HOME if panel_sp2_available else AlarmControlPanelState.ARMED_AWAY
         elif status == 2:
-            # Status 2 = sp2 (away/full arming) - only when panel_sp2 available
+            # Status 2 = sp2 active - only when panel_sp2 available
+            if not panel_sp2_available:
+                return AlarmControlPanelState.DISARMED  # Fallback if SP2 not available
             return AlarmControlPanelState.ARMED_AWAY
         else:
-            # Unknown status, assume armed away
-            return AlarmControlPanelState.ARMED_AWAY
+            # Unknown status, assume disarmed
+            return AlarmControlPanelState.DISARMED
 
     @property
     def code_format(self) -> str | None:
@@ -111,7 +122,12 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         try:
             data = self.coordinator.data
+            panel_sp1_available = data.get("panel_sp1_available", True) if data else True
             panel_sp2_available = data.get("panel_sp2_available", False) if data else False
+            
+            if not panel_sp1_available:
+                _LOGGER.error("Cannot arm: SP1 not available")
+                return
             
             if panel_sp2_available:
                 # When panel_sp2 is available, away mode uses sp2 (status 2)
@@ -126,6 +142,13 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
         try:
+            data = self.coordinator.data
+            panel_sp1_available = data.get("panel_sp1_available", True) if data else True
+            
+            if not panel_sp1_available:
+                _LOGGER.error("Cannot arm home: SP1 not available")
+                return
+                
             # Home mode always uses sp1 (status 1)
             await self._client.async_set_armed_home()
             await self.coordinator.async_request_refresh()

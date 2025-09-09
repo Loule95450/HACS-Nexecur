@@ -51,6 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Coordinator data is a dict for easy consumption by entities
             data = {
                 "panel_status": state.status, 
+                "panel_sp1_available": state.panel_sp1_available,
                 "panel_sp2_available": state.panel_sp2_available,
                 **(state.raw or {})
             }
