@@ -94,12 +94,12 @@ class NexecurClient:
     async def async_set_armed_home(self) -> None:
         """Set alarm to home mode (partial arming) using sp1."""
         await self._ensure_token_valid()
-        await self._panel_action("sp1")
+        await self._panel_status(1)  # sp1 = status 1
 
     async def async_set_armed_away(self) -> None:
         """Set alarm to away mode (full arming) using sp2."""
         await self._ensure_token_valid()
-        await self._panel_action("sp2")
+        await self._panel_status(2)  # sp2 = status 2
 
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
@@ -184,16 +184,6 @@ class NexecurClient:
         data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
         if data.get("message") != "OK" or data.get("status") != 0:
             raise NexecurError("Error while sending panel status")
-        # If pending, poll until done or timeout
-        if int(data.get("pending", 0)) != 0:
-            await self._wait_panel_done()
-
-    async def _panel_action(self, action: str) -> None:
-        """Send sp1 or sp2 action to the panel."""
-        body = {"action": action}
-        data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
-        if data.get("message") != "OK" or data.get("status") != 0:
-            raise NexecurError(f"Error while sending panel action {action}")
         # If pending, poll until done or timeout
         if int(data.get("pending", 0)) != 0:
             await self._wait_panel_done()

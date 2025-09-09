@@ -39,8 +39,6 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         self._attr_unique_id = f"nexecur_{entry.data['id_site']}"
         self._attr_should_poll = False
         self._id_site = entry.data["id_site"]
-        # Track the last armed mode to distinguish between home/away
-        self._last_armed_mode: str | None = None
 
     @property
     def supported_features(self) -> AlarmControlPanelEntityFeature:
@@ -63,14 +61,18 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         if not data:
             return None
         status = int(data.get("panel_status", 0))
+        panel_sp2_available = data.get("panel_sp2_available", False)
+        
         if status == 0:
             return AlarmControlPanelState.DISARMED
-        
-        # If armed, determine if it's home or away based on panel_sp2 availability and last mode
-        panel_sp2_available = data.get("panel_sp2_available", False)
-        if panel_sp2_available and self._last_armed_mode == "home":
-            return AlarmControlPanelState.ARMED_HOME
+        elif status == 1:
+            # Status 1 = sp1 (home/partial arming)
+            return AlarmControlPanelState.ARMED_HOME if panel_sp2_available else AlarmControlPanelState.ARMED_AWAY
+        elif status == 2:
+            # Status 2 = sp2 (away/full arming) - only when panel_sp2 available
+            return AlarmControlPanelState.ARMED_AWAY
         else:
+            # Unknown status, assume armed away
             return AlarmControlPanelState.ARMED_AWAY
 
     @property
@@ -102,7 +104,6 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         try:
             await self._client.async_set_armed(False)
-            self._last_armed_mode = None
             await self.coordinator.async_request_refresh()
         except NexecurError as err:
             _LOGGER.error("Failed to disarm: %s", err)
@@ -113,13 +114,11 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             panel_sp2_available = data.get("panel_sp2_available", False) if data else False
             
             if panel_sp2_available:
-                # When panel_sp2 is available, away mode uses sp2
+                # When panel_sp2 is available, away mode uses sp2 (status 2)
                 await self._client.async_set_armed_away()
-                self._last_armed_mode = "away"
             else:
-                # When panel_sp2 is not available, use sp1 for away (which is actually "present" mode)
+                # When panel_sp2 is not available, use sp1 (status 1) for away
                 await self._client.async_set_armed_home()
-                self._last_armed_mode = "away"
             
             await self.coordinator.async_request_refresh()
         except NexecurError as err:
@@ -127,9 +126,8 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
         try:
-            # Home mode always uses sp1 (present)
+            # Home mode always uses sp1 (status 1)
             await self._client.async_set_armed_home()
-            self._last_armed_mode = "home"
             await self.coordinator.async_request_refresh()
         except NexecurError as err:
             _LOGGER.error("Failed to arm home: %s", err)
