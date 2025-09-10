@@ -27,13 +27,13 @@ async def async_setup_entry(
     
     @callback
     def add_new_cameras():
-        """Add new camera entities when discovered."""
+        """Add new camera entities when their streams are activated."""
         if not coordinator.data:
             _LOGGER.info("No coordinator data available yet")
             return
             
         camera_streams = coordinator.data.get("camera_streams", {})
-        _LOGGER.info("Camera platform: Found %d camera streams: %s", len(camera_streams), list(camera_streams.keys()))
+        _LOGGER.debug("Camera platform: Found %d active camera streams: %s", len(camera_streams), list(camera_streams.keys()))
         
         new_entities = []
         
@@ -47,7 +47,7 @@ async def async_setup_entry(
             _LOGGER.info("Adding %d new Nexecur camera(s)", len(new_entities))
             async_add_entities(new_entities)
         else:
-            _LOGGER.info("No new camera entities to add")
+            _LOGGER.debug("No new camera entities to add")
     
     # Add any cameras that are already discovered
     add_new_cameras()
