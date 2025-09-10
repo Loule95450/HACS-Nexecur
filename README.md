@@ -12,8 +12,9 @@ What you get:
 
 - An Alarm control panel entity that shows the current state (armed/disarmed)
 - Actions to arm and disarm the alarm from Home Assistant
-- Camera entities for viewing RTSP streams from Nexecur cameras
-- Automatic polling of the panel status and camera streams (every 30 seconds by default)
+- Camera stream switch entities to control when camera streams are activated ("Allumer [Camera Name]")
+- Camera entities for viewing RTSP streams from Nexecur cameras (when switches are active)
+- Automatic polling of the panel status (every 30 seconds by default)
 - Dynamic discovery of new cameras when they are added to your system
 
 Installation (via HACS):
@@ -29,20 +30,25 @@ Installation (via HACS):
 
 Entity: after setup, you should see:
 - An alarm entity like `alarm_control_panel.nexecur_alarm` to arm/disarm the system
-- Camera entities like `camera.nexecur_camera_{site_id}_{serial}` for each discovered camera with streaming capability
+- Switch entities like `switch.allumer_{camera_name}` to control camera stream activation
+- Camera entities like `camera.nexecur_camera_{site_id}_{serial}` for each camera (when streams are active)
 
 Camera Features:
-- RTSP streams are automatically refreshed every 30 seconds to maintain connection
+- Camera streams are controlled by switch entities named "Allumer [Camera Name]"
+- Activating a switch requests an RTSP stream from the Nexecur API for that camera
+- Switches automatically turn off after 30 seconds (matching API limitations)
+- Camera entities only appear and show streams when their corresponding switches are active
+- This prevents automatic stream requests that could trigger camera lights unnecessarily
 - New cameras are automatically discovered when added to your Nexecur system
-- Camera entities show as unavailable when the stream is not accessible
-- Stream URLs are provided to Home Assistant's camera platform for viewing
 
 Troubleshooting:
 
 - If login fails, double‑check id_site and your PIN. The integration derives cryptographic hashes based on the server-provided salt.
 - The integration talks to the official Nexecur endpoints used by the mobile app. If Nexecur changes those endpoints, the integration may need an update.
-- If cameras are not discovered, ensure your Nexecur system has streaming enabled and that cameras are properly configured.
-- Camera streams may take up to 30 seconds to appear after being added to the system due to the polling interval.
+- If camera switches are not discovered, ensure your Nexecur system has cameras configured and accessible.
+- Camera streams only appear when you manually activate the corresponding switch.
+- If a camera switch doesn't work, the camera may not support streaming or may be offline.
+- Remember that camera switches automatically turn off after 30 seconds to comply with API limitations.
 
 ## License
 
