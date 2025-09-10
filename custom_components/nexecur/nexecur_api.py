@@ -30,7 +30,9 @@ class NexecurAuthError(NexecurError):
 
 @dataclass
 class NexecurState:
-    status: int  # 0 disabled, 1 enabled
+    status: int  # 0 disabled, 1 sp1 enabled, 2 sp2 enabled
+    panel_sp1_available: bool  # True if sp1 is available
+    panel_sp2_available: bool  # True if sp2 is available
     raw: Dict[str, Any]
 
 class NexecurClient:
@@ -83,11 +85,28 @@ class NexecurClient:
         pwd_hash, pin_hash = self._compute_hashes(self._password_plain, salt)
         data = await self._site(pwd_hash, pin_hash)
         status = int(data.get("panel_status", 0))
-        return NexecurState(status=status, raw=data)
+        panel_sp1_available = bool(int(data.get("panel_sp1", 0)))
+        panel_sp2_available = bool(int(data.get("panel_sp2", 0)))
+        return NexecurState(
+            status=status, 
+            panel_sp1_available=panel_sp1_available,
+            panel_sp2_available=panel_sp2_available, 
+            raw=data
+        )
 
     async def async_set_armed(self, armed: bool) -> None:
         await self._ensure_token_valid()
         await self._panel_status(1 if armed else 0)
+
+    async def async_set_armed_home(self) -> None:
+        """Set alarm to home mode (partial arming) using sp1."""
+        await self._ensure_token_valid()
+        await self._panel_status(1)  # sp1 = status 1
+
+    async def async_set_armed_away(self) -> None:
+        """Set alarm to away mode (full arming) using sp2."""
+        await self._ensure_token_valid()
+        await self._panel_status(2)  # sp2 = status 2
 
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
