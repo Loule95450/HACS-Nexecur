@@ -48,8 +48,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_update():
         try:
             state = await client.async_get_status()
-            # Coordinator data is a dict for easy consumption by entities
-            return {"panel_status": state.status, **(state.raw or {})}
+            
+            # Start with existing coordinator data to preserve switch states
+            data = coordinator.data.copy() if coordinator.data else {}
+            
+            # Update with current panel status
+            data.update({
+                "panel_status": state.status, 
+                "panel_sp1_available": state.panel_sp1_available,
+                "panel_sp2_available": state.panel_sp2_available,
+                **(state.raw or {})
+            })
+            
+            # Extract devices and cameras from site data (but don't auto-fetch streams)
+            raw_data = state.raw or {}
+            devices = raw_data.get("devices", [])
+            cameras = raw_data.get("cameras", [])
+            
+            # Debug logging to understand the API response structure
+            _LOGGER.debug("Nexecur API response keys: %s", list(raw_data.keys()))
+            _LOGGER.debug("Nexecur devices count: %d", len(devices))
+            _LOGGER.debug("Nexecur cameras count: %d", len(cameras))
+            
+            # Initialize stream data if not present
+            if "camera_streams" not in data:
+                data["camera_streams"] = {}
+            if "stream_switches" not in data:
+                data["stream_switches"] = {}
+                
+            data["devices"] = devices
+            data["cameras"] = cameras
+            
+            return data
         except NexecurError as err:
             _LOGGER.warning("Nexecur update failed: %s", err)
             raise

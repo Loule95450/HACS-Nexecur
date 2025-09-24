@@ -18,6 +18,7 @@ SITE_URI = "/webservices/site"
 REGISTER_URI = "/webservices/register"
 PANEL_STATUS_URI = "/webservices/panel-status"
 PANEL_CHECK_STATUS_URI = "/webservices/check-panel-status"
+STREAM_URI = "/webservices/stream"
 
 MAX_WAIT_SECONDS = 60
 
@@ -29,7 +30,9 @@ class NexecurAuthError(NexecurError):
 
 @dataclass
 class NexecurState:
-    status: int  # 0 disabled, 1 enabled
+    status: int  # 0 disabled, 1 sp1 enabled, 2 sp2 enabled
+    panel_sp1_available: bool  # True if sp1 is available
+    panel_sp2_available: bool  # True if sp2 is available
     raw: Dict[str, Any]
 
 class NexecurClient:
@@ -82,11 +85,28 @@ class NexecurClient:
         pwd_hash, pin_hash = self._compute_hashes(self._password_plain, salt)
         data = await self._site(pwd_hash, pin_hash)
         status = int(data.get("panel_status", 0))
-        return NexecurState(status=status, raw=data)
+        panel_sp1_available = bool(int(data.get("panel_sp1", 0)))
+        panel_sp2_available = bool(int(data.get("panel_sp2", 0)))
+        return NexecurState(
+            status=status, 
+            panel_sp1_available=panel_sp1_available,
+            panel_sp2_available=panel_sp2_available, 
+            raw=data
+        )
 
     async def async_set_armed(self, armed: bool) -> None:
         await self._ensure_token_valid()
         await self._panel_status(1 if armed else 0)
+
+    async def async_set_armed_home(self) -> None:
+        """Set alarm to home mode (partial arming) using sp1."""
+        await self._ensure_token_valid()
+        await self._panel_status(1)  # sp1 = status 1
+
+    async def async_set_armed_away(self) -> None:
+        """Set alarm to away mode (full arming) using sp2."""
+        await self._ensure_token_valid()
+        await self._panel_status(2)  # sp2 = status 2
 
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
@@ -95,6 +115,7 @@ class NexecurClient:
         if token:
             headers["X-Auth-Token"] = token
         url = BASE_URL + path
+        _LOGGER.debug("Making request to %s with headers: %s", url, {k: v for k, v in headers.items() if k != "X-Auth-Token"})
         async with session.post(url, json=json or {}, headers=headers) as resp:
             resp.raise_for_status()
             data = await resp.json(content_type=None)
@@ -185,6 +206,62 @@ class NexecurClient:
     async def _ensure_token_valid(self) -> None:
         if not self._token:
             await self._ensure_device()
+
+    async def async_get_stream(self, device_serial: str) -> Optional[str]:
+        """Get stream URL for a device by its serial number.
+        
+        Args:
+            device_serial: Serial number of the device (camera)
+            
+        Returns:
+            RTSP stream URL if successful, None if failed
+        """
+        await self._ensure_token_valid()
+        
+        # Try multiple request formats in case one is expected
+        request_variations = [
+            {"serial": device_serial},
+            {"device": device_serial},
+            {"device_serial": device_serial},
+            {"id": device_serial},
+        ]
+        
+        for i, payload in enumerate(request_variations):
+            try:
+                _LOGGER.info("Requesting stream for device %s (attempt %d) with payload: %s", device_serial, i+1, payload)
+                data = await self._post_json(STREAM_URI, json=payload, token=self._token)
+                _LOGGER.info("Stream response for device %s (attempt %d): %s", device_serial, i+1, data)
+                
+                # Check for success response
+                if data.get("message") == "OK" and data.get("status") == 0:
+                    stream_url = data.get("uri")
+                    if stream_url:
+                        _LOGGER.info("✓ Stream URL found for device %s: %s", device_serial, stream_url)
+                        return stream_url
+                
+                # Check for other possible success indicators
+                if "uri" in data and data["uri"]:
+                    stream_url = data["uri"]
+                    _LOGGER.info("✓ Stream URL found for device %s (no status check): %s", device_serial, stream_url)
+                    return stream_url
+                
+                # If status indicates error, try next variation
+                if data.get("status") != 0:
+                    _LOGGER.info("Status error (%s) for device %s attempt %d, trying next format", data.get("status"), device_serial, i+1)
+                    continue
+                else:
+                    # Status is 0 but no URI, this might be the expected format but device doesn't support streaming
+                    _LOGGER.info("Device %s returned OK status but no URI - likely doesn't support streaming", device_serial)
+                    return None
+                    
+            except Exception as err:
+                _LOGGER.warning("Exception getting stream for device %s (attempt %d): %s", device_serial, i+1, err)
+                if i == len(request_variations) - 1:  # Last attempt
+                    return None
+                continue
+        
+        _LOGGER.info("All stream request formats failed for device %s", device_serial)
+        return None
 
     # --- Properties ---
     @property

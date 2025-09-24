@@ -1,5 +1,5 @@
 DOMAIN = "nexecur"
-PLATFORMS = ["alarm_control_panel"]
+PLATFORMS = ["alarm_control_panel", "camera", "switch"]
 DEFAULT_NAME = "Nexecur Alarm"
 
 CONF_ID_SITE = "id_site"
