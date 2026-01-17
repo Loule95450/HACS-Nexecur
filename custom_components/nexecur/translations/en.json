@@ -2,11 +2,28 @@
   "config": {
     "step": {
       "user": {
-        "title": "Nexecur",
-        "description": "Enter your Nexecur credentials",
+        "title": "Nexecur - Choose Version",
+        "description": "Select your Nexecur alarm version",
+        "data": {
+          "alarm_version": "Alarm version"
+        }
+      },
+      "videofied": {
+        "title": "Nexecur Videofied",
+        "description": "Enter your Nexecur credentials (old version)",
         "data": {
           "id_site": "Site ID (wiring code)",
           "password": "PIN / Password",
+          "device_name": "Device name"
+        }
+      },
+      "hikvision": {
+        "title": "Nexecur Hikvision",
+        "description": "Enter your Nexecur Cloud credentials (new version)",
+        "data": {
+          "phone": "Phone number",
+          "password": "Cloud password",
+          "country_code": "Country code (e.g., 33)",
           "device_name": "Device name"
         }
       }

@@ -9,9 +9,25 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_ALARM_VERSION,
+    CONF_ID_SITE,
+    CONF_PHONE,
+    ALARM_VERSION_VIDEOFIED,
+    ALARM_VERSION_HIKVISION,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_identifier(entry: ConfigEntry) -> str:
+    """Get the identifier for this entry (id_site or phone based on version)."""
+    alarm_version = entry.data.get(CONF_ALARM_VERSION, ALARM_VERSION_VIDEOFIED)
+    if alarm_version == ALARM_VERSION_HIKVISION:
+        return entry.data.get(CONF_PHONE, "unknown")
+    return entry.data.get(CONF_ID_SITE, "unknown")
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -19,58 +35,70 @@ async def async_setup_entry(
     """Set up Nexecur camera entities from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
-    
+    alarm_version = data.get("alarm_version", ALARM_VERSION_VIDEOFIED)
+
     # Track created entities to avoid duplicates
     created_entities = set()
-    
+
     _LOGGER.info("Setting up Nexecur camera platform")
-    
+
     @callback
     def add_new_cameras():
         """Add new camera entities when their streams are activated."""
         if not coordinator.data:
             _LOGGER.info("No coordinator data available yet")
             return
-            
+
         camera_streams = coordinator.data.get("camera_streams", {})
         _LOGGER.debug("Camera platform: Found %d active camera streams: %s", len(camera_streams), list(camera_streams.keys()))
-        
+
         new_entities = []
-        
+
         for device_serial, stream_data in camera_streams.items():
             if device_serial not in created_entities:
                 _LOGGER.info("Creating camera entity for device %s", device_serial)
-                new_entities.append(NexecurCamera(coordinator, entry, device_serial, stream_data))
+                new_entities.append(
+                    NexecurCamera(coordinator, entry, device_serial, stream_data, alarm_version)
+                )
                 created_entities.add(device_serial)
-        
+
         if new_entities:
             _LOGGER.info("Adding %d new Nexecur camera(s)", len(new_entities))
             async_add_entities(new_entities)
         else:
             _LOGGER.debug("No new camera entities to add")
-    
+
     # Add any cameras that are already discovered
     add_new_cameras()
-    
+
     # Listen for coordinator updates to add new cameras
     coordinator.async_add_listener(add_new_cameras)
 
+
 class NexecurCamera(CoordinatorEntity, Camera):
     """Representation of a Nexecur camera."""
-    
+
     _attr_has_entity_name = True
     _attr_supported_features = CameraEntityFeature.STREAM
 
-    def __init__(self, coordinator, entry: ConfigEntry, device_serial: str, stream_data: dict) -> None:
+    def __init__(
+        self,
+        coordinator,
+        entry: ConfigEntry,
+        device_serial: str,
+        stream_data: dict,
+        alarm_version: str,
+    ) -> None:
         """Initialize the camera."""
         # Initialize Camera first to ensure all required attributes are set
         Camera.__init__(self)
         super().__init__(coordinator)
-        
+
         self._device_serial = device_serial
-        self._attr_unique_id = f"nexecur_camera_{entry.data['id_site']}_{device_serial}"
-        self._id_site = entry.data["id_site"]
-        
+        self._alarm_version = alarm_version
+        self._identifier = _get_identifier(entry)
+        self._attr_unique_id = f"nexecur_camera_{self._identifier}_{device_serial}"
+
         # Set name from device info if available
         device_info = stream_data.get("device_info", {})
         device_name = device_info.get("name") or device_info.get("nom") or f"Camera {device_serial}"
@@ -80,11 +108,11 @@ class NexecurCamera(CoordinatorEntity, Camera):
     def device_info(self) -> dict[str, Any]:
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, f"{self._id_site}_{self._device_serial}")},
+            "identifiers": {(DOMAIN, f"{self._identifier}_{self._device_serial}")},
             "name": self.name,
-            "manufacturer": "Nexecur",
+            "manufacturer": "Nexecur" if self._alarm_version == ALARM_VERSION_VIDEOFIED else "Nexecur (Hikvision)",
             "model": "Camera",
-            "via_device": (DOMAIN, str(self._id_site)),
+            "via_device": (DOMAIN, str(self._identifier)),
         }
 
     @property
@@ -92,7 +120,7 @@ class NexecurCamera(CoordinatorEntity, Camera):
         """Return True if entity is available."""
         if not self.coordinator.last_update_success:
             return False
-        
+
         camera_streams = self.coordinator.data.get("camera_streams", {}) if self.coordinator.data else {}
         return self._device_serial in camera_streams and camera_streams[self._device_serial].get("stream_url") is not None
 
@@ -105,15 +133,15 @@ class NexecurCamera(CoordinatorEntity, Camera):
         """Return the source of the stream."""
         if not self.coordinator.data:
             return None
-            
+
         camera_streams = self.coordinator.data.get("camera_streams", {})
         stream_data = camera_streams.get(self._device_serial, {})
         stream_url = stream_data.get("stream_url")
-        
+
         # Log stream URL for debugging (but don't expose full URL for security)
         if stream_url:
             _LOGGER.debug("Providing stream for camera %s", self._device_serial)
-        
+
         return stream_url
 
     @property
@@ -121,17 +149,18 @@ class NexecurCamera(CoordinatorEntity, Camera):
         """Return extra state attributes."""
         if not self.coordinator.data:
             return {}
-            
+
         camera_streams = self.coordinator.data.get("camera_streams", {})
         stream_data = camera_streams.get(self._device_serial, {})
         device_info = stream_data.get("device_info", {})
-        
+
         return {
             "device_serial": self._device_serial,
             "has_stream": bool(stream_data.get("stream_url")),
             "device_type": device_info.get("type"),
             "streaming_enabled": device_info.get("streaming_enabled"),
             "source": stream_data.get("source"),
+            "alarm_version": self._alarm_version,
         }
 
     async def async_camera_image(
