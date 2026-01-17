@@ -46,7 +46,7 @@ class NexecurHikvisionClient:
         device_name: str = "Home Assistant",
         session: Optional[ClientSession] = None,
     ) -> None:
-        self._phone = self._format_phone(country_code, phone)
+        self._account = self._format_account(country_code, phone)
         self._password = password
         self._ssid = ssid
         self._device_name = device_name
@@ -60,13 +60,22 @@ class NexecurHikvisionClient:
         self._current_device_serial: str = ""
 
     @staticmethod
-    def _format_phone(country_code: str, phone: str) -> str:
-        """Format phone number for API.
+    def _format_account(country_code: str, account: str) -> str:
+        """Format account (phone or email) for API.
 
-        Note: Unlike international format, this API expects the full number
-        WITH the leading 0 for French numbers. Example: 33 + 0612345678 = 330612345678
+        If the account contains '@', it's an email and returned as-is.
+        Otherwise, it's a phone number and formatted with country code.
+        Note: For French phone numbers, this API expects the full number
+        WITH the leading 0. Example: 33 + 0612345678 = 330612345678
         """
-        clean_phone = phone.strip().replace(" ", "").replace("-", "").replace(".", "")
+        clean_account = account.strip()
+
+        # If it's an email, return as-is (no country code)
+        if "@" in clean_account:
+            return clean_account
+
+        # It's a phone number, format with country code
+        clean_phone = clean_account.replace(" ", "").replace("-", "").replace(".", "")
         clean_code = country_code.strip().lstrip("+")
         return f"{clean_code}{clean_phone}"
 
@@ -122,7 +131,7 @@ class NexecurHikvisionClient:
         url = f"{self._base_url}/v3/users/login/v2"
 
         data = {
-            "account": self._phone,
+            "account": self._account,
             "password": self._md5(self._password),
             "featureCode": self._feature_code,
             "cuName": "aVBob25l",  # Base64 for "iPhone"
@@ -137,7 +146,7 @@ class NexecurHikvisionClient:
             "smsToken": "",
         }
 
-        _LOGGER.debug("Logging in to Hikvision cloud with account: %s", self._phone)
+        _LOGGER.debug("Logging in to Hikvision cloud with account: %s", self._account)
 
         try:
             async with session.post(url, data=data, headers=self._get_headers(), timeout=30) as resp:
