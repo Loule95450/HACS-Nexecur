@@ -24,6 +24,7 @@
           "phone": "Phone number",
           "password": "Cloud password",
           "country_code": "Country code (e.g., 33)",
+          "ssid": "WiFi network name (SSID)",
           "device_name": "Device name"
         }
       }

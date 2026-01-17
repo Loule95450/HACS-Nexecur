@@ -18,6 +18,7 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_PHONE,
     CONF_COUNTRY_CODE,
+    CONF_SSID,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -52,6 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             phone=entry.data[CONF_PHONE],
             password=entry.data[CONF_PASSWORD],
             country_code=entry.data.get(CONF_COUNTRY_CODE, "33"),
+            ssid=entry.data.get(CONF_SSID, ""),
             device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
             session=session,
         )

@@ -24,6 +24,7 @@
           "phone": "Numéro de téléphone",
           "password": "Mot de passe Cloud",
           "country_code": "Indicatif pays (ex: 33)",
+          "ssid": "Nom du réseau WiFi (SSID)",
           "device_name": "Nom de l'appareil"
         }
       }

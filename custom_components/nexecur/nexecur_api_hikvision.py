@@ -42,11 +42,13 @@ class NexecurHikvisionClient:
         phone: str,
         password: str,
         country_code: str = "33",
+        ssid: str = "",
         device_name: str = "Home Assistant",
         session: Optional[ClientSession] = None,
     ) -> None:
         self._phone = self._format_phone(country_code, phone)
         self._password = password
+        self._ssid = ssid
         self._device_name = device_name
         self._feature_code = self._generate_feature_code()
         self._session: Optional[ClientSession] = session
@@ -59,10 +61,12 @@ class NexecurHikvisionClient:
 
     @staticmethod
     def _format_phone(country_code: str, phone: str) -> str:
-        """Format phone number for API."""
+        """Format phone number for API.
+
+        Note: Unlike international format, this API expects the full number
+        WITH the leading 0 for French numbers. Example: 33 + 0612345678 = 330612345678
+        """
         clean_phone = phone.strip().replace(" ", "").replace("-", "").replace(".", "")
-        if clean_phone.startswith("0"):
-            clean_phone = clean_phone[1:]
         clean_code = country_code.strip().lstrip("+")
         return f"{clean_code}{clean_phone}"
 
@@ -82,12 +86,13 @@ class NexecurHikvisionClient:
             "Host": "apiieu.guardingvision.com",
             "appId": "Nexecur",
             "lang": "fr-FR",
-            "clientType": "1183",
+            "clientType": "1183",  # iOS
             "User-Agent": "HikConnect/1.0.2 (iPhone; iOS 26.2; Scale/3.00)",
             "clientVersion": "1.0.2.20250404",
+            "ssid": self._ssid,  # WiFi network name
             "netType": "WIFI",
             "Connection": "keep-alive",
-            "Accept-Language": "fr-FR;q=1",
+            "Accept-Language": "fr-FR;q=1, io-FR;q=0.9",
             "featureCode": self._feature_code,
             "osVersion": "26.2",
             "Accept": "*/*",
@@ -120,7 +125,7 @@ class NexecurHikvisionClient:
             "account": self._phone,
             "password": self._md5(self._password),
             "featureCode": self._feature_code,
-            "cuName": "aVBob25l",
+            "cuName": "aVBob25l",  # Base64 for "iPhone"
             "pushExtJson": '{\n  "language" : "zh"\n}',
             "pushRegisterJson": "[]",
             "bizType": "",
@@ -132,12 +137,14 @@ class NexecurHikvisionClient:
             "smsToken": "",
         }
 
-        _LOGGER.debug("Logging in to Hikvision cloud for phone %s...", self._phone[:6] + "***")
+        _LOGGER.debug("Logging in to Hikvision cloud with account: %s", self._phone)
 
         try:
             async with session.post(url, data=data, headers=self._get_headers(), timeout=30) as resp:
                 resp.raise_for_status()
                 res_json = await resp.json()
+
+            _LOGGER.debug("Login response: %s", res_json)
 
             meta = res_json.get("meta", {})
             if str(meta.get("code")) != "200":

@@ -12,6 +12,7 @@ from .const import (
     CONF_DEVICE_NAME,
     CONF_PHONE,
     CONF_COUNTRY_CODE,
+    CONF_SSID,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -44,6 +45,7 @@ HIKVISION_SCHEMA = vol.Schema(
         vol.Required(CONF_PHONE): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_COUNTRY_CODE, default="33"): str,
+        vol.Optional(CONF_SSID, default=""): str,
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
     }
 )
@@ -115,6 +117,7 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 phone=user_input[CONF_PHONE],
                 password=user_input[CONF_PASSWORD],
                 country_code=user_input.get(CONF_COUNTRY_CODE, "33"),
+                ssid=user_input.get(CONF_SSID, ""),
                 device_name=user_input.get(CONF_DEVICE_NAME, "Home Assistant"),
             )
             try:

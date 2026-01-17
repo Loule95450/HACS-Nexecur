@@ -17,3 +17,4 @@ CONF_ID_SITE = "id_site"
 # Hikvision specific
 CONF_PHONE = "phone"
 CONF_COUNTRY_CODE = "country_code"
+CONF_SSID = "ssid"
