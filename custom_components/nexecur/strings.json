@@ -2,11 +2,46 @@
   "config": {
     "step": {
       "user": {
-        "title": "Nexecur",
-        "description": "Renseignez vos identifiants Nexecur",
+        "title": "Nexecur - Choix de la version",
+        "description": "Sélectionnez la version de votre alarme Nexecur",
+        "data": {
+          "alarm_version": "Version de l'alarme"
+        }
+      },
+      "videofied": {
+        "title": "Nexecur Videofied",
+        "description": "Renseignez vos identifiants Nexecur (ancienne version)",
         "data": {
           "id_site": "ID Site (code de raccordement)",
           "password": "PIN / Mot de passe",
+          "device_name": "Nom de l'appareil"
+        }
+      },
+      "hikvision_method": {
+        "title": "Nexecur Hikvision - Méthode de connexion",
+        "description": "Choisissez comment vous souhaitez vous connecter",
+        "data": {
+          "login_method": "Méthode de connexion"
+        }
+      },
+      "hikvision_phone": {
+        "title": "Nexecur Hikvision - Téléphone",
+        "description": "Renseignez vos identifiants Nexecur Cloud",
+        "data": {
+          "phone": "Numéro de téléphone",
+          "password": "Mot de passe Cloud",
+          "country_code": "Indicatif pays (ex: 33)",
+          "ssid": "Nom du réseau WiFi (SSID)",
+          "device_name": "Nom de l'appareil"
+        }
+      },
+      "hikvision_email": {
+        "title": "Nexecur Hikvision - Email",
+        "description": "Renseignez vos identifiants Nexecur Cloud",
+        "data": {
+          "email": "Adresse email",
+          "password": "Mot de passe Cloud",
+          "ssid": "Nom du réseau WiFi (SSID)",
           "device_name": "Nom de l'appareil"
         }
       }
