@@ -390,10 +390,12 @@ class NexecurHikvisionClient:
                     raw_data["status_response"] = status_data
 
                     # Parse subsystem status
+                    # The API returns "arming" field with values: "disarm", "away", "stay"
                     sub_sys_list = status_data.get("AlarmHostStatus", {}).get("SubSysList", [])
                     if sub_sys_list:
                         for sub_sys in sub_sys_list:
-                            arm_status = sub_sys.get("SubSys", {}).get("armedStatus", "")
+                            arm_status = sub_sys.get("SubSys", {}).get("arming", "")
+                            _LOGGER.debug("SubSys arming status: %s", arm_status)
                             if arm_status == "away":
                                 status = 2
                                 break
