@@ -17,6 +17,8 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_PHONE,
+    CONF_EMAIL,
+    CONF_ACCOUNT,
     CONF_COUNTRY_CODE,
     CONF_SSID,
     ALARM_VERSION_VIDEOFIED,
@@ -49,8 +51,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if alarm_version == ALARM_VERSION_HIKVISION:
         # Hikvision client
+        # Get account from new format (CONF_ACCOUNT) or legacy format (CONF_PHONE/CONF_EMAIL)
+        account = entry.data.get(CONF_ACCOUNT) or entry.data.get(CONF_PHONE) or entry.data.get(CONF_EMAIL, "")
+
         client = NexecurHikvisionClient(
-            phone=entry.data[CONF_PHONE],
+            phone=account,
             password=entry.data[CONF_PASSWORD],
             country_code=entry.data.get(CONF_COUNTRY_CODE, "33"),
             ssid=entry.data.get(CONF_SSID, ""),
@@ -59,9 +64,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await client.async_login()
         _LOGGER.info(
-            "Nexecur Hikvision debug: session_id=%s phone=%s",
+            "Nexecur Hikvision debug: session_id=%s account=%s",
             client.token[:20] + "..." if client.token else "",
-            entry.data.get(CONF_PHONE, "")[:6] + "***",
+            account[:6] + "***" if account else "",
         )
     else:
         # Videofied client (default)

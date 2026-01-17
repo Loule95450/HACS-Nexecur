@@ -17,13 +17,30 @@
           "device_name": "Device name"
         }
       },
-      "hikvision": {
-        "title": "Nexecur Hikvision",
-        "description": "Enter your Nexecur Cloud credentials (new version)",
+      "hikvision_method": {
+        "title": "Nexecur Hikvision - Login Method",
+        "description": "Choose how you want to log in",
+        "data": {
+          "login_method": "Login method"
+        }
+      },
+      "hikvision_phone": {
+        "title": "Nexecur Hikvision - Phone",
+        "description": "Enter your Nexecur Cloud credentials",
         "data": {
           "phone": "Phone number",
           "password": "Cloud password",
           "country_code": "Country code (e.g., 33)",
+          "ssid": "WiFi network name (SSID)",
+          "device_name": "Device name"
+        }
+      },
+      "hikvision_email": {
+        "title": "Nexecur Hikvision - Email",
+        "description": "Enter your Nexecur Cloud credentials",
+        "data": {
+          "email": "Email address",
+          "password": "Cloud password",
           "ssid": "WiFi network name (SSID)",
           "device_name": "Device name"
         }

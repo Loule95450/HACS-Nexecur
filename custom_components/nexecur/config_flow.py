@@ -11,10 +11,15 @@ from .const import (
     CONF_PASSWORD,
     CONF_DEVICE_NAME,
     CONF_PHONE,
+    CONF_EMAIL,
+    CONF_ACCOUNT,
     CONF_COUNTRY_CODE,
     CONF_SSID,
+    CONF_LOGIN_METHOD,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
+    LOGIN_METHOD_PHONE,
+    LOGIN_METHOD_EMAIL,
 )
 from .nexecur_api import NexecurClient, NexecurAuthError
 
@@ -39,12 +44,34 @@ VIDEOFIED_SCHEMA = vol.Schema(
     }
 )
 
-# Step 2b: Hikvision credentials
-HIKVISION_SCHEMA = vol.Schema(
+# Step 2b: Hikvision - Choose login method
+HIKVISION_METHOD_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_LOGIN_METHOD, default=LOGIN_METHOD_PHONE): vol.In(
+            {
+                LOGIN_METHOD_PHONE: "Téléphone",
+                LOGIN_METHOD_EMAIL: "Email",
+            }
+        ),
+    }
+)
+
+# Step 3a: Hikvision - Phone credentials
+HIKVISION_PHONE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_PHONE): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_COUNTRY_CODE, default="33"): str,
+        vol.Optional(CONF_SSID, default=""): str,
+        vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
+    }
+)
+
+# Step 3b: Hikvision - Email credentials
+HIKVISION_EMAIL_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_EMAIL): str,
+        vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_SSID, default=""): str,
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
     }
@@ -56,6 +83,7 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         self._alarm_version: str = ""
+        self._login_method: str = ""
         self._data: dict = {}
 
     async def async_step_user(self, user_input=None):
@@ -68,7 +96,7 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._alarm_version == ALARM_VERSION_VIDEOFIED:
                 return await self.async_step_videofied()
             else:
-                return await self.async_step_hikvision()
+                return await self.async_step_hikvision_method()
 
         return self.async_show_form(
             step_id="user",
@@ -106,11 +134,28 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_hikvision(self, user_input=None):
-        """Step 2b: Configure Hikvision alarm."""
+    async def async_step_hikvision_method(self, user_input=None):
+        """Step 2b: Choose Hikvision login method (phone or email)."""
         errors = {}
         if user_input is not None:
-            # Import Hikvision client
+            self._login_method = user_input[CONF_LOGIN_METHOD]
+            self._data[CONF_LOGIN_METHOD] = self._login_method
+
+            if self._login_method == LOGIN_METHOD_PHONE:
+                return await self.async_step_hikvision_phone()
+            else:
+                return await self.async_step_hikvision_email()
+
+        return self.async_show_form(
+            step_id="hikvision_method",
+            data_schema=HIKVISION_METHOD_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_hikvision_phone(self, user_input=None):
+        """Step 3a: Configure Hikvision with phone number."""
+        errors = {}
+        if user_input is not None:
             from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurAuthError as HikAuthError
 
             client = NexecurHikvisionClient(
@@ -128,6 +173,8 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 self._data.update(user_input)
+                # Store account for unified access
+                self._data[CONF_ACCOUNT] = user_input[CONF_PHONE]
                 await self.async_set_unique_id(f"hikvision_{user_input[CONF_PHONE]}")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
@@ -138,8 +185,46 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await client.async_close()
 
         return self.async_show_form(
-            step_id="hikvision",
-            data_schema=HIKVISION_SCHEMA,
+            step_id="hikvision_phone",
+            data_schema=HIKVISION_PHONE_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_hikvision_email(self, user_input=None):
+        """Step 3b: Configure Hikvision with email."""
+        errors = {}
+        if user_input is not None:
+            from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurAuthError as HikAuthError
+
+            client = NexecurHikvisionClient(
+                phone=user_input[CONF_EMAIL],  # API uses same param
+                password=user_input[CONF_PASSWORD],
+                country_code="",  # Not needed for email
+                ssid=user_input.get(CONF_SSID, ""),
+                device_name=user_input.get(CONF_DEVICE_NAME, "Home Assistant"),
+            )
+            try:
+                await client.async_login()
+            except HikAuthError:
+                errors["base"] = "auth"
+            except Exception:
+                errors["base"] = "unknown"
+            else:
+                self._data.update(user_input)
+                # Store account for unified access
+                self._data[CONF_ACCOUNT] = user_input[CONF_EMAIL]
+                await self.async_set_unique_id(f"hikvision_{user_input[CONF_EMAIL]}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"Nexecur Hikvision {user_input[CONF_EMAIL]}",
+                    data=self._data,
+                )
+            finally:
+                await client.async_close()
+
+        return self.async_show_form(
+            step_id="hikvision_email",
+            data_schema=HIKVISION_EMAIL_SCHEMA,
             errors=errors,
         )
 
