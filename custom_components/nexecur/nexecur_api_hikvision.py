@@ -267,7 +267,7 @@ class NexecurHikvisionClient:
 
     def _calculate_digest_auth(self, method: str, uri: str, nonce: str, realm: str) -> str:
         """Calculate digest authentication header."""
-        username = self._user_info.get("username", self._phone)
+        username = self._user_info.get("username", self._account)
 
         # Derive password using salts
         auth_password = self._security_info.get("auth_hash")
