@@ -447,6 +447,105 @@ class NexecurHikvisionClient:
             raw=raw_data,
         )
 
+    async def async_get_sub_devices(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch all sub-devices (zones, keypads, sirens) with pagination."""
+        if not self._session_id:
+            await self.async_login()
+
+        if not self._current_device_serial:
+            return {"zones": [], "keypads": [], "sirens": []}
+
+        all_zones: List[Dict[str, Any]] = []
+        all_keypads: List[Dict[str, Any]] = []
+        all_sirens: List[Dict[str, Any]] = []
+
+        search_id = ""
+        position = 1
+        page_size = 10
+
+        while True:
+            payload = {
+                "AlarmHostStatusCond": {
+                    "pagingQueryCond": {
+                        "maxResults": page_size,
+                        "searchID": search_id if search_id else "0",
+                        "searchResultPosition": position,
+                    }
+                }
+            }
+
+            success, raw_response = await self._execute_isapi_command(
+                self._current_device_serial,
+                "POST",
+                "/ISAPI/SecurityCP/status/host?format=json",
+                payload,
+            )
+
+            if not success:
+                _LOGGER.warning("Failed to fetch sub-devices page at position %d", position)
+                break
+
+            try:
+                json_match = re.search(r"\r\n\r\n({.*})", raw_response, re.DOTALL)
+                if not json_match:
+                    break
+
+                data = json.loads(json_match.group(1))
+                alarm_host_status = data.get("AlarmHostStatus", {})
+
+                # Collect zones
+                zone_list = alarm_host_status.get("ZoneList", [])
+                for z in zone_list:
+                    zone_data = z.get("Zone")
+                    if zone_data:
+                        all_zones.append(zone_data)
+
+                # Collect keypads
+                ex_dev_status = alarm_host_status.get("ExDevStatus", {})
+                keypad_list = ex_dev_status.get("KeypadList", [])
+                for k in keypad_list:
+                    keypad_data = k.get("Keypad")
+                    if keypad_data:
+                        all_keypads.append(keypad_data)
+
+                # Collect sirens
+                siren_list = ex_dev_status.get("SirenList", [])
+                for s in siren_list:
+                    siren_data = s.get("Siren")
+                    if siren_data:
+                        all_sirens.append(siren_data)
+
+                # Check pagination
+                query_result = alarm_host_status.get("pagingQueryResult", {})
+                new_search_id = query_result.get("searchID")
+                if new_search_id:
+                    search_id = new_search_id
+
+                num_matches = query_result.get("numOfMatches", 0)
+                total_matches = query_result.get("totalMatches", 0)
+
+                if position + num_matches > total_matches or num_matches == 0:
+                    break
+
+                position += num_matches
+
+            except (json.JSONDecodeError, KeyError, AttributeError) as err:
+                _LOGGER.warning("Error parsing sub-devices response: %s", err)
+                break
+
+        _LOGGER.debug(
+            "Fetched sub-devices: %d zones, %d keypads, %d sirens",
+            len(all_zones),
+            len(all_keypads),
+            len(all_sirens),
+        )
+
+        return {
+            "zones": all_zones,
+            "keypads": all_keypads,
+            "sirens": all_sirens,
+        }
+
     async def async_set_armed(self, armed: bool) -> None:
         """Arm or disarm the alarm (legacy method)."""
         if armed:
