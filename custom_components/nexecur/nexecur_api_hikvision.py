@@ -429,6 +429,19 @@ class NexecurHikvisionClient:
                     siren_list = ex_dev_status.get("SirenList", [])
                     raw_data["sirens"] = [s.get("Siren", {}) for s in siren_list if s.get("Siren")]
 
+                    # Extract base station data (HostStatus, CommuniStatus, BatteryList)
+                    host_status = alarm_host_status.get("HostStatus", {})
+                    if host_status:
+                        raw_data["HostStatus"] = host_status
+
+                    communi_status = alarm_host_status.get("CommuniStatus", {})
+                    if communi_status:
+                        raw_data["CommuniStatus"] = communi_status
+
+                    battery_list = alarm_host_status.get("BatteryList", [])
+                    if battery_list:
+                        raw_data["BatteryList"] = battery_list
+
                     _LOGGER.debug(
                         "Parsed alarm status: %d, zones: %d, keypads: %d, sirens: %d",
                         status,

@@ -19,6 +19,7 @@ from .const import (
     CONF_ALARM_VERSION,
     CONF_ID_SITE,
     CONF_PHONE,
+    CONF_ACCOUNT,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -62,7 +63,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
         # Set unique ID based on alarm version
         if alarm_version == ALARM_VERSION_HIKVISION:
-            identifier = entry.data.get(CONF_PHONE, "unknown")
+            identifier = entry.data.get(CONF_ACCOUNT) or entry.data.get(CONF_PHONE, "unknown")
             self._attr_unique_id = f"nexecur_hikvision_{identifier}"
             self._identifier = identifier
         else:
