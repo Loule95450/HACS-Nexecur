@@ -6,6 +6,7 @@ DEFAULT_NAME = "Nexecur Alarm"
 DEVICE_TYPE_ZONE = "zone"
 DEVICE_TYPE_KEYPAD = "keypad"
 DEVICE_TYPE_SIREN = "siren"
+DEVICE_TYPE_BASE = "base"
 
 # Detector types mapping to device classes
 DETECTOR_TYPE_PIR = "pir"

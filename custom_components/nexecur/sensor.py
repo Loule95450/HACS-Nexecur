@@ -14,6 +14,7 @@ from homeassistant.const import (
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS,
     UnitOfTemperature,
+    UnitOfElectricPotential,
     EntityCategory,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -28,6 +29,7 @@ from .const import (
     DEVICE_TYPE_ZONE,
     DEVICE_TYPE_KEYPAD,
     DEVICE_TYPE_SIREN,
+    DEVICE_TYPE_BASE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,6 +83,31 @@ SIREN_SENSORS = [
     {"key": "sequenceID", "name": "Sequence ID", "device_class": None, "unit": None, "icon": "mdi:identifier", "entity_category": EntityCategory.DIAGNOSTIC},
     {"key": "sirenColor", "name": "Siren Color", "device_class": None, "unit": None, "icon": "mdi:palette", "entity_category": EntityCategory.DIAGNOSTIC},
     {"key": "mainPowerSupply", "name": "Power Supply", "device_class": None, "unit": None, "icon": "mdi:power-plug", "entity_category": EntityCategory.DIAGNOSTIC},
+]
+
+# Base station (AX Pro) sensors
+BASE_STATION_SENSORS = [
+    # Battery sensors (from BatteryList[0].Battery)
+    {"key": "battery_percent", "name": "Battery", "device_class": SensorDeviceClass.BATTERY, "unit": PERCENTAGE, "icon": "mdi:battery", "state_class": SensorStateClass.MEASUREMENT, "nested": "BatteryList"},
+    {"key": "battery_voltage", "name": "Battery Voltage", "device_class": SensorDeviceClass.VOLTAGE, "unit": UnitOfElectricPotential.VOLT, "icon": "mdi:flash", "state_class": SensorStateClass.MEASUREMENT, "nested": "BatteryList"},
+    {"key": "battery_status", "name": "Battery Status", "device_class": None, "unit": None, "icon": "mdi:battery-heart-variant", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "BatteryList"},
+    # HostStatus sensors
+    {"key": "faultNum", "name": "Fault Count", "device_class": None, "unit": None, "icon": "mdi:alert-circle-outline", "state_class": SensorStateClass.MEASUREMENT, "nested": "HostStatus"},
+    {"key": "EzvizNetwork", "name": "Network Type", "device_class": None, "unit": None, "icon": "mdi:network", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "HostStatus"},
+    # CommuniStatus sensors - WiFi
+    {"key": "wifiSignal", "name": "WiFi Signal", "device_class": None, "unit": None, "icon": "mdi:wifi-strength-3", "state_class": SensorStateClass.MEASUREMENT, "nested": "CommuniStatus"},
+    {"key": "wifiName", "name": "WiFi Network", "device_class": None, "unit": None, "icon": "mdi:wifi", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    # CommuniStatus sensors - Mobile
+    {"key": "mobileSignal", "name": "Mobile Signal", "device_class": None, "unit": None, "icon": "mdi:signal-cellular-3", "state_class": SensorStateClass.MEASUREMENT, "nested": "CommuniStatus"},
+    {"key": "mobileNetworkType", "name": "Mobile Network Type", "device_class": None, "unit": None, "icon": "mdi:signal-4g", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    {"key": "connectedSIM", "name": "Active SIM", "device_class": None, "unit": None, "icon": "mdi:sim", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    {"key": "SIMOperatorName", "name": "SIM Operator", "device_class": None, "unit": None, "icon": "mdi:sim-outline", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    # CommuniStatus sensors - Data usage
+    {"key": "flow", "name": "Data Usage", "device_class": None, "unit": "Mo", "icon": "mdi:chart-donut", "state_class": SensorStateClass.TOTAL_INCREASING, "nested": "CommuniStatus"},
+    {"key": "monFlowLimit", "name": "Monthly Data Limit", "device_class": None, "unit": "Mo", "icon": "mdi:chart-donut-variant", "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    # CommuniStatus sensors - RF noise
+    {"key": "R3AverageNoise", "name": "R3 RF Noise", "device_class": None, "unit": None, "icon": "mdi:waveform", "state_class": SensorStateClass.MEASUREMENT, "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
+    {"key": "RXAverageNoise", "name": "RX RF Noise", "device_class": None, "unit": None, "icon": "mdi:waveform", "state_class": SensorStateClass.MEASUREMENT, "entity_category": EntityCategory.DIAGNOSTIC, "nested": "CommuniStatus"},
 ]
 
 
@@ -195,6 +222,42 @@ async def async_setup_entry(
                             initial_data=siren,
                         )
                     )
+
+        # Process base station sensors (attached to main device)
+        for sensor_def in BASE_STATION_SENSORS:
+            sensor_key = sensor_def["key"]
+            nested_key = sensor_def.get("nested")
+
+            # Check if data exists
+            has_data = False
+            if nested_key == "BatteryList":
+                battery_list = coordinator.data.get("BatteryList", [])
+                if battery_list and len(battery_list) > 0:
+                    battery = battery_list[0].get("Battery", {})
+                    # Map our keys to actual API keys
+                    api_key_map = {"battery_percent": "percent", "battery_voltage": "voltage", "battery_status": "status"}
+                    actual_key = api_key_map.get(sensor_key, sensor_key)
+                    has_data = battery.get(actual_key) is not None
+            elif nested_key == "HostStatus":
+                host_status = coordinator.data.get("HostStatus", {})
+                has_data = host_status.get(sensor_key) is not None
+            elif nested_key == "CommuniStatus":
+                communi_status = coordinator.data.get("CommuniStatus", {})
+                has_data = communi_status.get(sensor_key) is not None
+
+            if not has_data:
+                continue
+
+            uid = f"{main_device_id}_base_{sensor_key}"
+            if uid not in created_entities:
+                created_entities.add(uid)
+                entities.append(
+                    NexecurBaseStationSensor(
+                        coordinator=coordinator,
+                        main_device_id=main_device_id,
+                        sensor_def=sensor_def,
+                    )
+                )
 
         if entities:
             _LOGGER.debug("Adding %d sub-device sensors", len(entities))
@@ -316,3 +379,70 @@ class NexecurSubDeviceSensor(CoordinatorEntity, SensorEntity):
         if self._device_type == DEVICE_TYPE_SIREN:
             return status in ["online", "on", "off"]
         return status == "online"
+
+
+class NexecurBaseStationSensor(CoordinatorEntity, SensorEntity):
+    """Sensor entity for Nexecur base station (AX Pro)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator,
+        main_device_id: str,
+        sensor_def: dict[str, Any],
+    ) -> None:
+        """Initialize the base station sensor."""
+        super().__init__(coordinator)
+        self._main_device_id = main_device_id
+        self._sensor_key = sensor_def["key"]
+        self._nested_key = sensor_def.get("nested")
+
+        # Set unique ID
+        self._attr_unique_id = f"{main_device_id}_base_{self._sensor_key}"
+
+        # Configure sensor from definition
+        self._attr_name = sensor_def["name"]
+        self._attr_device_class = sensor_def.get("device_class")
+        self._attr_native_unit_of_measurement = sensor_def.get("unit")
+        self._attr_icon = sensor_def.get("icon")
+        self._attr_state_class = sensor_def.get("state_class")
+
+        if sensor_def.get("entity_category"):
+            self._attr_entity_category = sensor_def["entity_category"]
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device information to link this entity to the main device."""
+        return {
+            "identifiers": {(DOMAIN, self._main_device_id)},
+        }
+
+    @property
+    def native_value(self) -> Any:
+        """Return the sensor value."""
+        if not self.coordinator.data:
+            return None
+
+        if self._nested_key == "BatteryList":
+            battery_list = self.coordinator.data.get("BatteryList", [])
+            if battery_list and len(battery_list) > 0:
+                battery = battery_list[0].get("Battery", {})
+                # Map our keys to actual API keys
+                api_key_map = {"battery_percent": "percent", "battery_voltage": "voltage", "battery_status": "status"}
+                actual_key = api_key_map.get(self._sensor_key, self._sensor_key)
+                return battery.get(actual_key)
+        elif self._nested_key == "HostStatus":
+            host_status = self.coordinator.data.get("HostStatus", {})
+            return host_status.get(self._sensor_key)
+        elif self._nested_key == "CommuniStatus":
+            communi_status = self.coordinator.data.get("CommuniStatus", {})
+            return communi_status.get(self._sensor_key)
+
+        return None
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Base station is always available if coordinator has data
+        return self.coordinator.data is not None

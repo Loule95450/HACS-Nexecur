@@ -22,6 +22,7 @@ from .const import (
     DEVICE_TYPE_ZONE,
     DEVICE_TYPE_KEYPAD,
     DEVICE_TYPE_SIREN,
+    DEVICE_TYPE_BASE,
     DETECTOR_TYPE_PIR,
     DETECTOR_TYPE_PIRCAM,
     DETECTOR_TYPE_MAGNET,
@@ -87,6 +88,18 @@ SIREN_BINARY_SENSORS = [
     {"key": "abnormalOrNot", "name": "Abnormal", "device_class": BinarySensorDeviceClass.PROBLEM, "on_value": True, "entity_category": EntityCategory.DIAGNOSTIC},
     {"key": "isViaRepeater", "name": "Via Repeater", "device_class": None, "on_value": True, "icon": "mdi:access-point-network", "entity_category": EntityCategory.DIAGNOSTIC},
     {"key": "intercomServiceEnabled", "name": "Intercom Enabled", "device_class": None, "on_value": True, "icon": "mdi:phone-voip", "entity_category": EntityCategory.DIAGNOSTIC},
+]
+
+# Binary sensor definitions for base station (AX Pro)
+BASE_STATION_BINARY_SENSORS = [
+    # HostStatus sensors
+    {"key": "ACConnect", "name": "External Power", "device_class": BinarySensorDeviceClass.PLUG, "on_value": True, "nested": "HostStatus"},
+    {"key": "tamperEvident", "name": "Tamper", "device_class": BinarySensorDeviceClass.TAMPER, "on_value": True, "nested": "HostStatus"},
+    # CommuniStatus sensors - Connection states
+    {"key": "wifi", "name": "WiFi Connected", "device_class": BinarySensorDeviceClass.CONNECTIVITY, "on_value": "normal", "icon": "mdi:wifi", "nested": "CommuniStatus"},
+    {"key": "wired", "name": "Ethernet Connected", "device_class": BinarySensorDeviceClass.CONNECTIVITY, "on_value": "normal", "icon": "mdi:ethernet", "nested": "CommuniStatus"},
+    {"key": "mobile", "name": "Mobile Connected", "device_class": BinarySensorDeviceClass.CONNECTIVITY, "on_value": "normal", "icon": "mdi:signal-cellular-3", "nested": "CommuniStatus"},
+    {"key": "cloud", "name": "Cloud Connected", "device_class": BinarySensorDeviceClass.CONNECTIVITY, "on_value": "normal", "icon": "mdi:cloud-check", "nested": "CommuniStatus"},
 ]
 
 
@@ -227,6 +240,34 @@ async def async_setup_entry(
                             initial_data=siren,
                         )
                     )
+
+        # Process base station binary sensors (attached to main device)
+        for sensor_def in BASE_STATION_BINARY_SENSORS:
+            sensor_key = sensor_def["key"]
+            nested_key = sensor_def.get("nested")
+
+            # Check if data exists
+            has_data = False
+            if nested_key == "HostStatus":
+                host_status = coordinator.data.get("HostStatus", {})
+                has_data = host_status.get(sensor_key) is not None
+            elif nested_key == "CommuniStatus":
+                communi_status = coordinator.data.get("CommuniStatus", {})
+                has_data = communi_status.get(sensor_key) is not None
+
+            if not has_data:
+                continue
+
+            uid = f"{main_device_id}_base_{sensor_key}"
+            if uid not in created_entities:
+                created_entities.add(uid)
+                entities.append(
+                    NexecurBaseStationBinarySensor(
+                        coordinator=coordinator,
+                        main_device_id=main_device_id,
+                        sensor_def=sensor_def,
+                    )
+                )
 
         if entities:
             _LOGGER.debug("Adding %d sub-device binary sensors", len(entities))
@@ -398,3 +439,87 @@ class NexecurBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return status in ["online", "on", "off"]
 
         return status == "online"
+
+
+class NexecurBaseStationBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor entity for Nexecur base station (AX Pro)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator,
+        main_device_id: str,
+        sensor_def: dict[str, Any],
+    ) -> None:
+        """Initialize the base station binary sensor."""
+        super().__init__(coordinator)
+        self._main_device_id = main_device_id
+        self._sensor_key = sensor_def["key"]
+        self._on_value = sensor_def["on_value"]
+        self._nested_key = sensor_def.get("nested")
+
+        # Set unique ID
+        self._attr_unique_id = f"{main_device_id}_base_{self._sensor_key}"
+
+        # Configure sensor from definition
+        self._attr_name = sensor_def["name"]
+        self._attr_device_class = sensor_def.get("device_class")
+
+        if sensor_def.get("icon"):
+            self._attr_icon = sensor_def["icon"]
+
+        if sensor_def.get("entity_category"):
+            self._attr_entity_category = sensor_def["entity_category"]
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device information to link this entity to the main device."""
+        return {
+            "identifiers": {(DOMAIN, self._main_device_id)},
+        }
+
+    def _get_value(self) -> Any:
+        """Get the value for this sensor."""
+        if not self.coordinator.data:
+            return None
+
+        if self._nested_key == "HostStatus":
+            host_status = self.coordinator.data.get("HostStatus", {})
+            return host_status.get(self._sensor_key)
+        elif self._nested_key == "CommuniStatus":
+            communi_status = self.coordinator.data.get("CommuniStatus", {})
+            return communi_status.get(self._sensor_key)
+
+        return None
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True if the binary sensor is on."""
+        value = self._get_value()
+
+        if value is None:
+            return None
+
+        # Handle special "not equal" comparison (e.g., "!normal")
+        if isinstance(self._on_value, str) and self._on_value.startswith("!"):
+            expected_off_value = self._on_value[1:]
+            return value != expected_off_value
+
+        # Handle list of on values
+        if isinstance(self._on_value, list):
+            return value in self._on_value
+
+        # Direct comparison
+        return value == self._on_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        return {"raw_value": self._get_value()}
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        # Base station is always available if coordinator has data
+        return self.coordinator.data is not None
