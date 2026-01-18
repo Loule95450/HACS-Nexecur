@@ -375,6 +375,8 @@ class NexecurHikvisionClient:
                 "subSys": True,
                 "hostStatus": True,
                 "battery": True,
+                "zoneList": True,
+                "exDevStatus": True,
             }
         }
 
@@ -398,9 +400,11 @@ class NexecurHikvisionClient:
                     status_data = json.loads(json_match.group(1))
                     raw_data["status_response"] = status_data
 
+                    alarm_host_status = status_data.get("AlarmHostStatus", {})
+
                     # Parse subsystem status
                     # The API returns "arming" field with values: "disarm", "away", "stay"
-                    sub_sys_list = status_data.get("AlarmHostStatus", {}).get("SubSysList", [])
+                    sub_sys_list = alarm_host_status.get("SubSysList", [])
                     if sub_sys_list:
                         for sub_sys in sub_sys_list:
                             arm_status = sub_sys.get("SubSys", {}).get("arming", "")
@@ -414,7 +418,24 @@ class NexecurHikvisionClient:
                             elif arm_status == "disarm":
                                 status = 0
 
-                    _LOGGER.debug("Parsed alarm status: %d", status)
+                    # Extract sub-devices: zones, keypads, sirens
+                    zone_list = alarm_host_status.get("ZoneList", [])
+                    raw_data["zones"] = [z.get("Zone", {}) for z in zone_list if z.get("Zone")]
+
+                    ex_dev_status = alarm_host_status.get("ExDevStatus", {})
+                    keypad_list = ex_dev_status.get("KeypadList", [])
+                    raw_data["keypads"] = [k.get("Keypad", {}) for k in keypad_list if k.get("Keypad")]
+
+                    siren_list = ex_dev_status.get("SirenList", [])
+                    raw_data["sirens"] = [s.get("Siren", {}) for s in siren_list if s.get("Siren")]
+
+                    _LOGGER.debug(
+                        "Parsed alarm status: %d, zones: %d, keypads: %d, sirens: %d",
+                        status,
+                        len(raw_data["zones"]),
+                        len(raw_data["keypads"]),
+                        len(raw_data["sirens"]),
+                    )
             except (json.JSONDecodeError, KeyError) as err:
                 _LOGGER.debug("Could not parse status response: %s", err)
 

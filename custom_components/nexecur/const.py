@@ -1,6 +1,22 @@
 DOMAIN = "nexecur"
-PLATFORMS = ["alarm_control_panel", "camera", "switch"]
+PLATFORMS = ["alarm_control_panel", "camera", "switch", "sensor", "binary_sensor"]
 DEFAULT_NAME = "Nexecur Alarm"
+
+# Sub-device types
+DEVICE_TYPE_ZONE = "zone"
+DEVICE_TYPE_KEYPAD = "keypad"
+DEVICE_TYPE_SIREN = "siren"
+
+# Detector types mapping to device classes
+DETECTOR_TYPE_PIR = "pir"
+DETECTOR_TYPE_PIRCAM = "pircam"
+DETECTOR_TYPE_MAGNET = "magnetDetector"
+DETECTOR_TYPE_MAGNET_SHOCK = "magnetShockDetector"
+DETECTOR_TYPE_SMOKE = "wirelessSmokeDetector"
+DETECTOR_TYPE_CO = "wirelessCODetector"
+DETECTOR_TYPE_GLASS = "glassBreak"
+DETECTOR_TYPE_WATER = "waterDetector"
+DETECTOR_TYPE_GAS = "gasDetector"
 
 # Alarm version types
 ALARM_VERSION_VIDEOFIED = "videofied"
