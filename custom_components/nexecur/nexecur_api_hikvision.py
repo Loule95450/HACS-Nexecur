@@ -384,7 +384,8 @@ class NexecurHikvisionClient:
             if self._last_known_state:
                 _LOGGER.debug("Returning last known state due to missing device serial")
                 return self._last_known_state
-            return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+            # No device serial and no previous state, raise exception
+            raise NexecurError("No device serial available and no previous state available")
 
         payload = {
             "AlarmHostStatusCond": {
@@ -413,7 +414,7 @@ class NexecurHikvisionClient:
                     status=self._last_known_state.status,
                     panel_sp1_available=self._last_known_state.panel_sp1_available,
                     panel_sp2_available=self._last_known_state.panel_sp2_available,
-                    raw={**self._last_known_state.raw, "api_error": True},
+                    raw={**(self._last_known_state.raw or {}), "api_error": True},
                 )
             # No previous state available, raise exception for coordinator to handle
             raise NexecurError("Failed to get alarm status and no previous state available")
@@ -451,6 +452,8 @@ class NexecurHikvisionClient:
             if self._last_known_state:
                 _LOGGER.debug("Using last known state due to parsing error")
                 return self._last_known_state
+            # No previous state available, raise exception
+            raise NexecurError(f"Failed to parse status response and no previous state available: {err}")
 
         # Create new state
         new_state = NexecurState(
