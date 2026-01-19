@@ -333,8 +333,12 @@ class NexecurHikvisionClient:
                 if resp.status == 401 and _retry:
                     _LOGGER.warning("Session expired (401), attempting re-authentication...")
                     self._session_id = ""  # Reset session
-                    await self.async_login()  # Re-authenticate
-                    # Retry once after re-authentication
+                    try:
+                        await self.async_login()  # Re-authenticate
+                    except Exception as login_err:
+                        _LOGGER.error("Re-authentication failed: %s", login_err)
+                        return {"meta": {"code": 401}, "data": "", "error": f"Re-authentication failed: {login_err}"}
+                    # Retry once after successful re-authentication
                     return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
                 
                 resp.raise_for_status()
@@ -410,11 +414,12 @@ class NexecurHikvisionClient:
             _LOGGER.warning("Failed to get status from API, returning last known state")
             if self._last_known_state:
                 # Update raw_data but keep the previous status
+                last_raw = self._last_known_state.raw or {}
                 return NexecurState(
                     status=self._last_known_state.status,
                     panel_sp1_available=self._last_known_state.panel_sp1_available,
                     panel_sp2_available=self._last_known_state.panel_sp2_available,
-                    raw={**(self._last_known_state.raw or {}), "api_error": True},
+                    raw={**last_raw, "api_error": True},
                 )
             # No previous state available, raise exception for coordinator to handle
             raise NexecurError("Failed to get alarm status and no previous state available")
