@@ -331,20 +331,31 @@ class NexecurHikvisionClient:
             async with session.post(tunnel_url, data=body_params, headers=self._get_headers(), timeout=30) as resp:
                 # Check for 401 Unauthorized - session expired
                 if resp.status == 401 and _retry:
-                    _LOGGER.warning("Session expired (401), attempting to re-authenticate...")
+                    _LOGGER.warning(
+                        "Session expired (401) for device %s, %s %s - attempting to re-authenticate...",
+                        device_serial,
+                        method,
+                        uri,
+                    )
                     self._session_id = ""
                     try:
                         await self.async_login()
                         # Retry the request once with new session
                         return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
                     except Exception as login_err:
-                        _LOGGER.error("Failed to re-authenticate: %s", login_err)
+                        _LOGGER.error(
+                            "Failed to re-authenticate for device %s, %s %s: %s",
+                            device_serial,
+                            method,
+                            uri,
+                            login_err,
+                        )
                         return {"meta": {"code": 401}, "data": ""}
                 
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as err:
-            _LOGGER.error("ISAPI tunnel error: %s", err)
+            _LOGGER.error("ISAPI tunnel error for %s %s: %s", method, uri, err)
             return {"meta": {"code": 500}, "data": ""}
 
     async def _execute_isapi_command(
@@ -374,6 +385,12 @@ class NexecurHikvisionClient:
 
         return False, raw_response
 
+    def _get_last_known_or_default_state(self) -> NexecurState:
+        """Return the last known state if available, otherwise a default disarmed state."""
+        if self._last_known_state is not None:
+            return self._last_known_state
+        return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+
     async def async_get_status(self) -> NexecurState:
         """Get the current alarm status."""
         if not self._session_id:
@@ -382,9 +399,7 @@ class NexecurHikvisionClient:
         if not self._current_device_serial:
             _LOGGER.warning("No device serial available")
             # Return last known state if available, otherwise default
-            if self._last_known_state is not None:
-                return self._last_known_state
-            return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+            return self._get_last_known_or_default_state()
 
         payload = {
             "AlarmHostStatusCond": {
@@ -471,8 +486,7 @@ class NexecurHikvisionClient:
         else:
             # API call failed - return last known state if available
             _LOGGER.warning("Failed to get alarm status, returning last known state")
-            if self._last_known_state is not None:
-                return self._last_known_state
+            return self._get_last_known_or_default_state()
 
         # Hikvision panels typically support both modes
         new_state = NexecurState(
