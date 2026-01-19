@@ -388,7 +388,9 @@ class NexecurHikvisionClient:
     def _get_last_known_or_default_state(self) -> NexecurState:
         """Return the last known state if available, otherwise a default disarmed state."""
         if self._last_known_state is not None:
+            _LOGGER.debug("Returning last known state: status=%d", self._last_known_state.status)
             return self._last_known_state
+        _LOGGER.debug("No last known state available, returning default disarmed state")
         return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
 
     async def async_get_status(self) -> NexecurState:
@@ -422,6 +424,7 @@ class NexecurHikvisionClient:
         # Parse the status from response
         status = 0  # Default: disarmed
         raw_data: Dict[str, Any] = {"devices": self._devices}
+        parsed_successfully = False
 
         if success:
             # Try to parse JSON from the response
@@ -481,8 +484,10 @@ class NexecurHikvisionClient:
                         len(raw_data["keypads"]),
                         len(raw_data["sirens"]),
                     )
+                    parsed_successfully = True
             except (json.JSONDecodeError, KeyError) as err:
-                _LOGGER.debug("Could not parse status response: %s", err)
+                _LOGGER.warning("Could not parse status response: %s - returning last known state", err)
+                return self._get_last_known_or_default_state()
         else:
             # API call failed - return last known state if available
             _LOGGER.warning("Failed to get alarm status, returning last known state")
@@ -496,8 +501,8 @@ class NexecurHikvisionClient:
             raw=raw_data,
         )
         
-        # Store this as the last known valid state (only if we got a successful response)
-        if success:
+        # Store this as the last known valid state (only if we successfully parsed the response)
+        if parsed_successfully:
             self._last_known_state = new_state
         
         return new_state
