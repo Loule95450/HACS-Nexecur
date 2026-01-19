@@ -335,6 +335,10 @@ class NexecurHikvisionClient:
                     self._session_id = ""  # Reset session
                     try:
                         await self.async_login()  # Re-authenticate
+                        # Verify login succeeded
+                        if not self._session_id:
+                            _LOGGER.error("Re-authentication failed: no session ID obtained")
+                            return {"meta": {"code": 401}, "data": "", "error": "Re-authentication failed: no session ID"}
                     except Exception as login_err:
                         _LOGGER.error("Re-authentication failed: %s", login_err)
                         return {"meta": {"code": 401}, "data": "", "error": f"Re-authentication failed: {login_err}"}
