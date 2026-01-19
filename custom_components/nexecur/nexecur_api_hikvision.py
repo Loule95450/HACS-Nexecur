@@ -58,6 +58,7 @@ class NexecurHikvisionClient:
         self._security_info: Dict[str, Any] = {}
         self._devices: List[Dict[str, Any]] = []
         self._current_device_serial: str = ""
+        self._last_known_state: Optional[NexecurState] = None
 
     @staticmethod
     def _format_account(country_code: str, account: str) -> str:
@@ -303,6 +304,7 @@ class NexecurHikvisionClient:
         uri: str,
         payload: Optional[Dict[str, Any]] = None,
         digest_auth: Optional[str] = None,
+        _retry: bool = True,
     ) -> Dict[str, Any]:
         """Send an ISAPI command through the cloud tunnel."""
         session = await self._session_ensure()
@@ -327,11 +329,22 @@ class NexecurHikvisionClient:
 
         try:
             async with session.post(tunnel_url, data=body_params, headers=self._get_headers(), timeout=30) as resp:
+                # Handle session expiration (401)
+                if resp.status == 401 and _retry:
+                    _LOGGER.warning("Session expired (401), attempting re-authentication...")
+                    self._session_id = ""  # Reset session
+                    await self.async_login()  # Re-authenticate
+                    # Retry once after re-authentication
+                    return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
+                
                 resp.raise_for_status()
                 return await resp.json()
+        except asyncio.TimeoutError:
+            _LOGGER.error("ISAPI tunnel timeout for %s %s", method, uri)
+            return {"meta": {"code": 504}, "data": "", "error": "timeout"}
         except Exception as err:
             _LOGGER.error("ISAPI tunnel error: %s", err)
-            return {"meta": {"code": 500}, "data": ""}
+            return {"meta": {"code": 500}, "data": "", "error": str(err)}
 
     async def _execute_isapi_command(
         self,
@@ -367,6 +380,10 @@ class NexecurHikvisionClient:
 
         if not self._current_device_serial:
             _LOGGER.warning("No device serial available")
+            # Return last known state if available
+            if self._last_known_state:
+                _LOGGER.debug("Returning last known state due to missing device serial")
+                return self._last_known_state
             return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
 
         payload = {
@@ -385,46 +402,68 @@ class NexecurHikvisionClient:
             payload,
         )
 
-        # Parse the status from response
-        status = 0  # Default: disarmed
         raw_data: Dict[str, Any] = {"devices": self._devices}
 
-        if success:
-            # Try to parse JSON from the response
-            try:
-                # Find JSON in the response
-                json_match = re.search(r"\r\n\r\n({.*})", raw_response, re.DOTALL)
-                if json_match:
-                    status_data = json.loads(json_match.group(1))
-                    raw_data["status_response"] = status_data
+        # On failure, return last known state
+        if not success:
+            _LOGGER.warning("Failed to get status from API, returning last known state")
+            if self._last_known_state:
+                # Update raw_data but keep the previous status
+                return NexecurState(
+                    status=self._last_known_state.status,
+                    panel_sp1_available=self._last_known_state.panel_sp1_available,
+                    panel_sp2_available=self._last_known_state.panel_sp2_available,
+                    raw={**self._last_known_state.raw, "api_error": True},
+                )
+            # No previous state available, raise exception for coordinator to handle
+            raise NexecurError("Failed to get alarm status and no previous state available")
 
-                    # Parse subsystem status
-                    # The API returns "arming" field with values: "disarm", "away", "stay"
-                    sub_sys_list = status_data.get("AlarmHostStatus", {}).get("SubSysList", [])
-                    if sub_sys_list:
-                        for sub_sys in sub_sys_list:
-                            arm_status = sub_sys.get("SubSys", {}).get("arming", "")
-                            _LOGGER.debug("SubSys arming status: %s", arm_status)
-                            if arm_status == "away":
-                                status = 2
-                                break
-                            elif arm_status == "stay":
-                                status = 1
-                                break
-                            elif arm_status == "disarm":
-                                status = 0
+        # Parse the status from response
+        status = 0  # Default: disarmed
+        
+        try:
+            # Find JSON in the response
+            json_match = re.search(r"\r\n\r\n({.*})", raw_response, re.DOTALL)
+            if json_match:
+                status_data = json.loads(json_match.group(1))
+                raw_data["status_response"] = status_data
 
-                    _LOGGER.debug("Parsed alarm status: %d", status)
-            except (json.JSONDecodeError, KeyError) as err:
-                _LOGGER.debug("Could not parse status response: %s", err)
+                # Parse subsystem status
+                # The API returns "arming" field with values: "disarm", "away", "stay"
+                sub_sys_list = status_data.get("AlarmHostStatus", {}).get("SubSysList", [])
+                if sub_sys_list:
+                    for sub_sys in sub_sys_list:
+                        arm_status = sub_sys.get("SubSys", {}).get("arming", "")
+                        _LOGGER.debug("SubSys arming status: %s", arm_status)
+                        if arm_status == "away":
+                            status = 2
+                            break
+                        elif arm_status == "stay":
+                            status = 1
+                            break
+                        elif arm_status == "disarm":
+                            status = 0
 
-        # Hikvision panels typically support both modes
-        return NexecurState(
+                _LOGGER.debug("Parsed alarm status: %d", status)
+        except (json.JSONDecodeError, KeyError) as err:
+            _LOGGER.warning("Could not parse status response: %s", err)
+            # On parsing error, use last known state
+            if self._last_known_state:
+                _LOGGER.debug("Using last known state due to parsing error")
+                return self._last_known_state
+
+        # Create new state
+        new_state = NexecurState(
             status=status,
             panel_sp1_available=True,
             panel_sp2_available=True,
             raw=raw_data,
         )
+        
+        # Save as last known state
+        self._last_known_state = new_state
+
+        return new_state
 
     async def async_set_armed(self, armed: bool) -> None:
         """Arm or disarm the alarm (legacy method)."""
