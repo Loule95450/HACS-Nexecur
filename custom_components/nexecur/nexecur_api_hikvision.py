@@ -58,6 +58,7 @@ class NexecurHikvisionClient:
         self._security_info: Dict[str, Any] = {}
         self._devices: List[Dict[str, Any]] = []
         self._current_device_serial: str = ""
+        self._last_known_state: Optional[NexecurState] = None
 
     @staticmethod
     def _format_account(country_code: str, account: str) -> str:
@@ -303,6 +304,7 @@ class NexecurHikvisionClient:
         uri: str,
         payload: Optional[Dict[str, Any]] = None,
         digest_auth: Optional[str] = None,
+        _retry: bool = True,
     ) -> Dict[str, Any]:
         """Send an ISAPI command through the cloud tunnel."""
         session = await self._session_ensure()
@@ -327,6 +329,18 @@ class NexecurHikvisionClient:
 
         try:
             async with session.post(tunnel_url, data=body_params, headers=self._get_headers(), timeout=30) as resp:
+                # Check for 401 Unauthorized - session expired
+                if resp.status == 401 and _retry:
+                    _LOGGER.warning("Session expired (401), attempting to re-authenticate...")
+                    self._session_id = ""
+                    try:
+                        await self.async_login()
+                        # Retry the request once with new session
+                        return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
+                    except Exception as login_err:
+                        _LOGGER.error("Failed to re-authenticate: %s", login_err)
+                        return {"meta": {"code": 401}, "data": ""}
+                
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as err:
@@ -367,6 +381,9 @@ class NexecurHikvisionClient:
 
         if not self._current_device_serial:
             _LOGGER.warning("No device serial available")
+            # Return last known state if available, otherwise default
+            if self._last_known_state is not None:
+                return self._last_known_state
             return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
 
         payload = {
@@ -451,14 +468,25 @@ class NexecurHikvisionClient:
                     )
             except (json.JSONDecodeError, KeyError) as err:
                 _LOGGER.debug("Could not parse status response: %s", err)
+        else:
+            # API call failed - return last known state if available
+            _LOGGER.warning("Failed to get alarm status, returning last known state")
+            if self._last_known_state is not None:
+                return self._last_known_state
 
         # Hikvision panels typically support both modes
-        return NexecurState(
+        new_state = NexecurState(
             status=status,
             panel_sp1_available=True,
             panel_sp2_available=True,
             raw=raw_data,
         )
+        
+        # Store this as the last known valid state (only if we got a successful response)
+        if success:
+            self._last_known_state = new_state
+        
+        return new_state
 
     async def async_get_sub_devices(self) -> Dict[str, List[Dict[str, Any]]]:
         """Fetch all sub-devices (zones, keypads, sirens) with pagination."""
