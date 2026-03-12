@@ -245,43 +245,33 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         """Options flow to manage arm/disarm codes."""
         import logging
         _LOGGER = logging.getLogger(__name__)
-        _LOGGER.error("NEXECUR_OPTIONS_FLOW: Starting with entry.data=%s", entry.data)
         
+        _LOGGER.error("NEXECUR_OPTIONS_FLOW: INIT CALLED")
+        
+        # Get data safely
         try:
-            # Safely get entry data
-            entry_data = {}
-            if entry.data is not None:
-                entry_data = dict(entry.data)
-            
-            disarm_code = entry_data.get(CONF_DISARM_CODE, "")
-            arm_code = entry_data.get(CONF_ARM_CODE, "")
-            
-            _LOGGER.error("NEXECUR_OPTIONS_FLOW: disarm=%s arm=%s", disarm_code, arm_code)
-
-            # Handle form submission
-            if user_input is not None:
-                new_arm = user_input.get(CONF_ARM_CODE, "")
-                new_data = dict(entry_data)
-                new_data[CONF_ARM_CODE] = new_arm
-                
-                self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-                return self.async_create_entry(title="")
-
-            # Build schema
-            data_schema = {}
-            
-            # Disarm code - only if not set
-            if not disarm_code:
-                data_schema[vol.Optional(CONF_DISARM_CODE, default="")] = str
-            
-            # Arm code - always editable
-            data_schema[vol.Optional(CONF_ARM_CODE, default=arm_code)] = str
-
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(data_schema),
-            )
-            
+            entry_data = dict(getattr(self.entry, 'data', {}) or {})
         except Exception as e:
-            _LOGGER.error("NEXECUR_OPTIONS_FLOW ERROR: %s", e, exc_info=True)
-            raise
+            _LOGGER.error("NEXECUR_OPTIONS_FLOW: Error getting data: %s", e)
+            entry_data = {}
+        
+        disarm_code = entry_data.get(CONF_DISARM_CODE, "")
+        arm_code = entry_data.get(CONF_ARM_CODE, "")
+        
+        _LOGGER.error("NEXECUR_OPTIONS_FLOW: disarm=%s arm=%s", disarm_code, arm_code)
+
+        if user_input is not None:
+            new_arm = user_input.get(CONF_ARM_CODE, "")
+            entry_data[CONF_ARM_CODE] = new_arm
+            self.hass.config_entries.async_update_entry(self.entry, data=entry_data)
+            return self.async_create_entry(title="")
+
+        data_schema = {}
+        if not disarm_code:
+            data_schema[vol.Optional(CONF_DISARM_CODE, default="")] = str
+        data_schema[vol.Optional(CONF_ARM_CODE, default=arm_code)] = str
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(data_schema),
+        )
