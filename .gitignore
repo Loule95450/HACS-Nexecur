@@ -20,3 +20,4 @@ wheels/
 .installed.cfg
 *.egg
 .osgrep
+.venv/
