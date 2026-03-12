@@ -240,23 +240,37 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         self.entry = entry
 
     async def async_step_init(self, user_input=None):
-        """Options flow to edit disarm code."""
+        """Options flow to add disarm code (only if not already set)."""
+        
+        # Check if disarm code is already set - if so, cannot modify
+        current_code = self.entry.data.get(CONF_DISARM_CODE)
+        if current_code:
+            return self.async_show_form(
+                step_id="init",
+                data_schema=vol.Schema({}),
+                errors={},
+                description_placeholders={
+                    "reason": "Le code de désactivation est déjà défini. Veuillez supprimer l'intégration pour le modifier."
+                }
+            )
+
+        # No code set yet - allow adding one
         if user_input is not None:
-            # Update the entry with new disarm code
+            new_code = user_input.get(CONF_DISARM_CODE, "")
             self.hass.config_entries.async_update_entry(
                 self.entry,
-                data={**self.entry.data, CONF_DISARM_CODE: user_input.get(CONF_DISARM_CODE, "")}
+                data={**self.entry.data, CONF_DISARM_CODE: new_code}
             )
             return self.async_create_entry(title="")
 
-        # Get current disarm code if set
-        current_code = self.entry.data.get(CONF_DISARM_CODE, "")
-
         options_schema = vol.Schema({
-            vol.Optional(CONF_DISARM_CODE, default=current_code): str,
+            vol.Optional(CONF_DISARM_CODE, default=""): str,
         })
 
         return self.async_show_form(
             step_id="init",
             data_schema=options_schema,
+            description_placeholders={
+                "reason": "Laissez vide pour aucun code, ou entrez un code pour sécuriser le désarmement."
+            }
         )

@@ -56,10 +56,7 @@
     "step": {
       "init": {
         "title": "Nexecur Options",
-        "description": "Modify alarm options",
-        "data": {
-          "disarm_code": "Disarm code (leave empty to remove)"
-        }
+        "description": "Add a disarm code (only once)"
       }
     }
   }
