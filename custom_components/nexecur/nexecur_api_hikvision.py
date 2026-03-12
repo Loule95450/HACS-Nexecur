@@ -58,6 +58,7 @@ class NexecurHikvisionClient:
         self._security_info: Dict[str, Any] = {}
         self._devices: List[Dict[str, Any]] = []
         self._current_device_serial: str = ""
+        self._last_known_state: Optional[NexecurState] = None
 
     @staticmethod
     def _format_account(country_code: str, account: str) -> str:
@@ -303,6 +304,7 @@ class NexecurHikvisionClient:
         uri: str,
         payload: Optional[Dict[str, Any]] = None,
         digest_auth: Optional[str] = None,
+        _retry: bool = True,
     ) -> Dict[str, Any]:
         """Send an ISAPI command through the cloud tunnel."""
         session = await self._session_ensure()
@@ -327,10 +329,33 @@ class NexecurHikvisionClient:
 
         try:
             async with session.post(tunnel_url, data=body_params, headers=self._get_headers(), timeout=30) as resp:
+                # Check for 401 Unauthorized - session expired
+                if resp.status == 401 and _retry:
+                    _LOGGER.warning(
+                        "Session expired (401) for device %s, %s %s - attempting to re-authenticate...",
+                        device_serial,
+                        method,
+                        uri,
+                    )
+                    self._session_id = ""
+                    try:
+                        await self.async_login()
+                        # Retry the request once with new session
+                        return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
+                    except Exception as login_err:
+                        _LOGGER.error(
+                            "Failed to re-authenticate for device %s, %s %s: %s",
+                            device_serial,
+                            method,
+                            uri,
+                            login_err,
+                        )
+                        return {"meta": {"code": 401}, "data": ""}
+                
                 resp.raise_for_status()
                 return await resp.json()
         except Exception as err:
-            _LOGGER.error("ISAPI tunnel error: %s", err)
+            _LOGGER.error("ISAPI tunnel error for %s %s: %s", method, uri, err)
             return {"meta": {"code": 500}, "data": ""}
 
     async def _execute_isapi_command(
@@ -360,6 +385,14 @@ class NexecurHikvisionClient:
 
         return False, raw_response
 
+    def _get_last_known_or_default_state(self) -> NexecurState:
+        """Return the last known state if available, otherwise a default disarmed state."""
+        if self._last_known_state is not None:
+            _LOGGER.debug("Returning last known state: status=%d", self._last_known_state.status)
+            return self._last_known_state
+        _LOGGER.debug("No last known state available, returning default disarmed state")
+        return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+
     async def async_get_status(self) -> NexecurState:
         """Get the current alarm status."""
         if not self._session_id:
@@ -367,7 +400,8 @@ class NexecurHikvisionClient:
 
         if not self._current_device_serial:
             _LOGGER.warning("No device serial available")
-            return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+            # Return last known state if available, otherwise default
+            return self._get_last_known_or_default_state()
 
         payload = {
             "AlarmHostStatusCond": {
@@ -375,6 +409,8 @@ class NexecurHikvisionClient:
                 "subSys": True,
                 "hostStatus": True,
                 "battery": True,
+                "zoneList": True,
+                "exDevStatus": True,
             }
         }
 
@@ -388,6 +424,7 @@ class NexecurHikvisionClient:
         # Parse the status from response
         status = 0  # Default: disarmed
         raw_data: Dict[str, Any] = {"devices": self._devices}
+        parsed_successfully = False
 
         if success:
             # Try to parse JSON from the response
@@ -398,9 +435,11 @@ class NexecurHikvisionClient:
                     status_data = json.loads(json_match.group(1))
                     raw_data["status_response"] = status_data
 
+                    alarm_host_status = status_data.get("AlarmHostStatus", {})
+
                     # Parse subsystem status
                     # The API returns "arming" field with values: "disarm", "away", "stay"
-                    sub_sys_list = status_data.get("AlarmHostStatus", {}).get("SubSysList", [])
+                    sub_sys_list = alarm_host_status.get("SubSysList", [])
                     if sub_sys_list:
                         for sub_sys in sub_sys_list:
                             arm_status = sub_sys.get("SubSys", {}).get("arming", "")
@@ -414,17 +453,158 @@ class NexecurHikvisionClient:
                             elif arm_status == "disarm":
                                 status = 0
 
-                    _LOGGER.debug("Parsed alarm status: %d", status)
+                    # Extract sub-devices: zones, keypads, sirens
+                    zone_list = alarm_host_status.get("ZoneList", [])
+                    raw_data["zones"] = [z.get("Zone", {}) for z in zone_list if z.get("Zone")]
+
+                    ex_dev_status = alarm_host_status.get("ExDevStatus", {})
+                    keypad_list = ex_dev_status.get("KeypadList", [])
+                    raw_data["keypads"] = [k.get("Keypad", {}) for k in keypad_list if k.get("Keypad")]
+
+                    siren_list = ex_dev_status.get("SirenList", [])
+                    raw_data["sirens"] = [s.get("Siren", {}) for s in siren_list if s.get("Siren")]
+
+                    # Extract base station data (HostStatus, CommuniStatus, BatteryList)
+                    host_status = alarm_host_status.get("HostStatus", {})
+                    if host_status:
+                        raw_data["HostStatus"] = host_status
+
+                    communi_status = alarm_host_status.get("CommuniStatus", {})
+                    if communi_status:
+                        raw_data["CommuniStatus"] = communi_status
+
+                    battery_list = alarm_host_status.get("BatteryList", [])
+                    if battery_list:
+                        raw_data["BatteryList"] = battery_list
+
+                    _LOGGER.debug(
+                        "Parsed alarm status: %d, zones: %d, keypads: %d, sirens: %d",
+                        status,
+                        len(raw_data["zones"]),
+                        len(raw_data["keypads"]),
+                        len(raw_data["sirens"]),
+                    )
+                    parsed_successfully = True
             except (json.JSONDecodeError, KeyError) as err:
-                _LOGGER.debug("Could not parse status response: %s", err)
+                _LOGGER.warning("Could not parse status response: %s - returning last known state", err)
+                return self._get_last_known_or_default_state()
+        else:
+            # API call failed - return last known state if available
+            _LOGGER.warning("Failed to get alarm status, returning last known state")
+            return self._get_last_known_or_default_state()
 
         # Hikvision panels typically support both modes
-        return NexecurState(
+        new_state = NexecurState(
             status=status,
             panel_sp1_available=True,
             panel_sp2_available=True,
             raw=raw_data,
         )
+        
+        # Store this as the last known valid state (only if we successfully parsed the response)
+        if parsed_successfully:
+            self._last_known_state = new_state
+        
+        return new_state
+
+    async def async_get_sub_devices(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Fetch all sub-devices (zones, keypads, sirens) with pagination."""
+        if not self._session_id:
+            await self.async_login()
+
+        if not self._current_device_serial:
+            return {"zones": [], "keypads": [], "sirens": []}
+
+        all_zones: List[Dict[str, Any]] = []
+        all_keypads: List[Dict[str, Any]] = []
+        all_sirens: List[Dict[str, Any]] = []
+
+        search_id = ""
+        position = 1
+        page_size = 10
+
+        while True:
+            payload = {
+                "AlarmHostStatusCond": {
+                    "pagingQueryCond": {
+                        "maxResults": page_size,
+                        "searchID": search_id if search_id else "0",
+                        "searchResultPosition": position,
+                    }
+                }
+            }
+
+            success, raw_response = await self._execute_isapi_command(
+                self._current_device_serial,
+                "POST",
+                "/ISAPI/SecurityCP/status/host?format=json",
+                payload,
+            )
+
+            if not success:
+                _LOGGER.warning("Failed to fetch sub-devices page at position %d", position)
+                break
+
+            try:
+                json_match = re.search(r"\r\n\r\n({.*})", raw_response, re.DOTALL)
+                if not json_match:
+                    break
+
+                data = json.loads(json_match.group(1))
+                alarm_host_status = data.get("AlarmHostStatus", {})
+
+                # Collect zones
+                zone_list = alarm_host_status.get("ZoneList", [])
+                for z in zone_list:
+                    zone_data = z.get("Zone")
+                    if zone_data:
+                        all_zones.append(zone_data)
+
+                # Collect keypads
+                ex_dev_status = alarm_host_status.get("ExDevStatus", {})
+                keypad_list = ex_dev_status.get("KeypadList", [])
+                for k in keypad_list:
+                    keypad_data = k.get("Keypad")
+                    if keypad_data:
+                        all_keypads.append(keypad_data)
+
+                # Collect sirens
+                siren_list = ex_dev_status.get("SirenList", [])
+                for s in siren_list:
+                    siren_data = s.get("Siren")
+                    if siren_data:
+                        all_sirens.append(siren_data)
+
+                # Check pagination
+                query_result = alarm_host_status.get("pagingQueryResult", {})
+                new_search_id = query_result.get("searchID")
+                if new_search_id:
+                    search_id = new_search_id
+
+                num_matches = query_result.get("numOfMatches", 0)
+                total_matches = query_result.get("totalMatches", 0)
+
+                if position + num_matches > total_matches or num_matches == 0:
+                    break
+
+                position += num_matches
+
+            except (json.JSONDecodeError, KeyError, AttributeError) as err:
+                _LOGGER.warning("Error parsing sub-devices response: %s", err)
+                break
+
+        _LOGGER.debug(
+            "Fetched sub-devices: %d zones, %d keypads, %d sirens",
+            len(all_zones),
+            len(all_keypads),
+            len(all_sirens),
+        )
+
+        return {
+            "zones": all_zones,
+            "keypads": all_keypads,
+            "sirens": all_sirens,
+        }
 
     async def async_set_armed(self, armed: bool) -> None:
         """Arm or disarm the alarm (legacy method)."""

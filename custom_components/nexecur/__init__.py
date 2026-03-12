@@ -114,9 +114,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             devices = raw_data.get("devices", [])
             cameras = raw_data.get("cameras", [])
 
+            # For Hikvision, fetch sub-devices with pagination
+            if alarm_version == ALARM_VERSION_HIKVISION and hasattr(client, "async_get_sub_devices"):
+                sub_devices = await client.async_get_sub_devices()
+                zones = sub_devices.get("zones", [])
+                keypads = sub_devices.get("keypads", [])
+                sirens = sub_devices.get("sirens", [])
+            else:
+                # Fallback to raw data (for Videofied or if method not available)
+                zones = raw_data.get("zones", [])
+                keypads = raw_data.get("keypads", [])
+                sirens = raw_data.get("sirens", [])
+
             _LOGGER.debug("Nexecur API response keys: %s", list(raw_data.keys()))
             _LOGGER.debug("Nexecur devices count: %d", len(devices))
             _LOGGER.debug("Nexecur cameras count: %d", len(cameras))
+            _LOGGER.debug(
+                "Nexecur sub-devices: zones=%d, keypads=%d, sirens=%d",
+                len(zones),
+                len(keypads),
+                len(sirens),
+            )
 
             # Initialize stream data if not present
             if "camera_streams" not in data:
@@ -126,6 +144,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             data["devices"] = devices
             data["cameras"] = cameras
+            data["zones"] = zones
+            data["keypads"] = keypads
+            data["sirens"] = sirens
 
             return data
         except (NexecurError, HikvisionError) as err:
