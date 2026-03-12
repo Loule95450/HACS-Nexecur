@@ -16,6 +16,9 @@
           "password": "PIN / Mot de passe",
           "device_name": "Nom de l'appareil",
           "disarm_code": "Code de désactivation (facultatif)"
+        },
+        "data_desc": {
+          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration."
         }
       },
       "hikvision_method": {
@@ -56,7 +59,16 @@
     "step": {
       "init": {
         "title": "Options Nexecur",
-        "description": "Ajouter un code de désactivation (une seule fois uniquement)"
+        "description": "Ajouter un code de désactivation (une seule fois uniquement)",
+        "description_placeholders": {
+          "reason": "Le code de désactivation est déjà défini. Pour le modifier ou le supprimer, vous devez supprimer l'intégration et la reconfigurer."
+        },
+        "data": {
+          "disarm_code": "Code de désactivation"
+        },
+        "data_desc": {
+          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration."
+        }
       }
     }
   }
