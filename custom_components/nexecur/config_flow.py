@@ -280,4 +280,3 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=options_schema,
         )
-        )
