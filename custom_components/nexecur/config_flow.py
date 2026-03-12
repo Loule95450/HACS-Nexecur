@@ -3,6 +3,10 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.schema_config_entry_flow import (
+    SchemaFlowFormStep,
+    SchemaOptionsFlowHandler,
+)
 
 from .const import (
     DOMAIN,
@@ -80,6 +84,19 @@ HIKVISION_EMAIL_SCHEMA = vol.Schema(
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
     }
 )
+
+
+# Options flow using SchemaOptionsFlowHandler (modern way)
+OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_DISARM_CODE, default=""): str,
+        vol.Optional(CONF_ARM_CODE, default=""): str,
+    }
+)
+
+OPTIONS_FLOW = {
+    "init": SchemaFlowFormStep(OPTIONS_SCHEMA),
+}
 
 
 class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -234,44 +251,4 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @callback
     def async_get_options_flow(self, config_entry):
-        return NexecurOptionsFlow(config_entry)
-
-
-class NexecurOptionsFlow(config_entries.OptionsFlow):
-    def __init__(self, entry):
-        self.entry = entry
-
-    async def async_step_init(self, user_input=None):
-        """Options flow to manage arm/disarm codes."""
-        import logging
-        _LOGGER = logging.getLogger(__name__)
-        
-        _LOGGER.error("NEXECUR_OPTIONS_FLOW: INIT CALLED")
-        
-        # Get data safely
-        try:
-            entry_data = dict(getattr(self.entry, 'data', {}) or {})
-        except Exception as e:
-            _LOGGER.error("NEXECUR_OPTIONS_FLOW: Error getting data: %s", e)
-            entry_data = {}
-        
-        disarm_code = entry_data.get(CONF_DISARM_CODE, "")
-        arm_code = entry_data.get(CONF_ARM_CODE, "")
-        
-        _LOGGER.error("NEXECUR_OPTIONS_FLOW: disarm=%s arm=%s", disarm_code, arm_code)
-
-        if user_input is not None:
-            new_arm = user_input.get(CONF_ARM_CODE, "")
-            entry_data[CONF_ARM_CODE] = new_arm
-            self.hass.config_entries.async_update_entry(self.entry, data=entry_data)
-            return self.async_create_entry(title="")
-
-        data_schema = {}
-        if not disarm_code:
-            data_schema[vol.Optional(CONF_DISARM_CODE, default="")] = str
-        data_schema[vol.Optional(CONF_ARM_CODE, default=arm_code)] = str
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(data_schema),
-        )
+        return SchemaOptionsFlowHandler(config_entry, OPTIONS_FLOW)
