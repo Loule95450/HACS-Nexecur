@@ -240,4 +240,23 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         self.entry = entry
 
     async def async_step_init(self, user_input=None):
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({}))
+        """Options flow to edit disarm code."""
+        if user_input is not None:
+            # Update the entry with new disarm code
+            self.hass.config_entries.async_update_entry(
+                self.entry,
+                data={**self.entry.data, CONF_DISARM_CODE: user_input.get(CONF_DISARM_CODE, "")}
+            )
+            return self.async_create_entry(title="")
+
+        # Get current disarm code if set
+        current_code = self.entry.data.get(CONF_DISARM_CODE, "")
+
+        options_schema = vol.Schema({
+            vol.Optional(CONF_DISARM_CODE, default=current_code): str,
+        })
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=options_schema,
+        )

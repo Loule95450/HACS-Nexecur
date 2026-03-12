@@ -51,5 +51,16 @@
       "auth": "Authentication failed",
       "unknown": "Unknown error"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nexecur Options",
+        "description": "Modify alarm options",
+        "data": {
+          "disarm_code": "Disarm code (leave empty to remove)"
+        }
+      }
+    }
   }
 }

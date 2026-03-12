@@ -51,5 +51,16 @@
       "auth": "Échec de l'authentification",
       "unknown": "Erreur inconnue"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Nexecur",
+        "description": "Modifier les options de l'alarme",
+        "data": {
+          "disarm_code": "Code de désactivation (laisser vide pour supprimer)"
+        }
+      }
+    }
   }
 }
