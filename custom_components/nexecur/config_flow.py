@@ -244,39 +244,45 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Options flow to manage arm/disarm codes."""
         
-        # Check current codes - handle None and missing keys
-        entry_data = self.entry.data or {}
-        current_disarm_code = entry_data.get(CONF_DISARM_CODE) or ""
-        current_arm_code = entry_data.get(CONF_ARM_CODE) or ""
+        try:
+            # Check current codes - handle None and missing keys
+            entry_data = self.entry.data if self.entry.data else {}
+            current_disarm_code = str(entry_data.get(CONF_DISARM_CODE, ""))
+            current_arm_code = str(entry_data.get(CONF_ARM_CODE, ""))
 
-        # If disarm code is already set, user cannot modify it
-        disarm_locked = bool(entry_data.get(CONF_DISARM_CODE))
+            # If disarm code is already set, user cannot modify it
+            disarm_locked = bool(entry_data.get(CONF_DISARM_CODE))
 
-        if user_input is not None:
-            new_arm_code = user_input.get(CONF_ARM_CODE, "")
+            if user_input is not None:
+                new_arm_code = user_input.get(CONF_ARM_CODE, "")
+                
+                # Update only arm_code (disarm_code cannot be changed once set)
+                new_data = {**entry_data, CONF_ARM_CODE: new_arm_code}
+                
+                self.hass.config_entries.async_update_entry(
+                    self.entry,
+                    data=new_data
+                )
+                return self.async_create_entry(title="")
+
+            # Build schema - only arm_code is editable
+            options_schema_dict = {}
             
-            # Update only arm_code (disarm_code cannot be changed once set)
-            new_data = {**entry_data, CONF_ARM_CODE: new_arm_code}
+            if not disarm_locked:
+                # Can add disarm code if not set yet
+                options_schema_dict[vol.Optional(CONF_DISARM_CODE, default="")] = str
             
-            self.hass.config_entries.async_update_entry(
-                self.entry,
-                data=new_data
+            # Arm code is always editable
+            options_schema_dict[vol.Optional(CONF_ARM_CODE, default="")] = str
+
+            options_schema = vol.Schema(options_schema_dict)
+
+            return self.async_show_form(
+                step_id="init",
+                data_schema=options_schema,
             )
-            return self.async_create_entry(title="")
-
-        # Build schema - only arm_code is editable
-        options_schema_dict = {}
-        
-        if not disarm_locked:
-            # Can add disarm code if not set yet
-            options_schema_dict[vol.Optional(CONF_DISARM_CODE, default="")] = str
-        
-        # Arm code is always editable
-        options_schema_dict[vol.Optional(CONF_ARM_CODE, default="")] = str
-
-        options_schema = vol.Schema(options_schema_dict)
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=options_schema,
-        )
+        except Exception as e:
+            # Log the error for debugging
+            import logging
+            logging.getLogger(__name__).error(f"Options flow error: {e}")
+            raise
