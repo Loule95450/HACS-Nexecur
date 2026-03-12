@@ -243,15 +243,23 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         """Options flow to manage arm/disarm codes."""
+        import logging
+        _LOGGER = logging.getLogger(__name__)
         
         try:
+            _LOGGER.debug("Starting options flow, entry.data: %s", entry.data)
+            
             # Check current codes - handle None and missing keys
-            entry_data = self.entry.data if self.entry.data else {}
+            entry_data = entry.data if entry.data else {}
+            _LOGGER.debug("entry_data: %s", entry_data)
+            
             current_disarm_code = str(entry_data.get(CONF_DISARM_CODE, ""))
             current_arm_code = str(entry_data.get(CONF_ARM_CODE, ""))
+            _LOGGER.debug("current_disarm_code: %s, current_arm_code: %s", current_disarm_code, current_arm_code)
 
             # If disarm code is already set, user cannot modify it
             disarm_locked = bool(entry_data.get(CONF_DISARM_CODE))
+            _LOGGER.debug("disarm_locked: %s", disarm_locked)
 
             if user_input is not None:
                 new_arm_code = user_input.get(CONF_ARM_CODE, "")
@@ -276,13 +284,12 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             options_schema_dict[vol.Optional(CONF_ARM_CODE, default="")] = str
 
             options_schema = vol.Schema(options_schema_dict)
+            _LOGGER.debug("options_schema created successfully")
 
             return self.async_show_form(
                 step_id="init",
                 data_schema=options_schema,
             )
         except Exception as e:
-            # Log the error for debugging
-            import logging
-            logging.getLogger(__name__).error(f"Options flow error: {e}")
+            _LOGGER.error("Options flow error: %s", e, exc_info=True)
             raise

@@ -1,22 +1,12 @@
 ## 🐛 Corrections
 
-### Correction de syntaxe
+### Amélioration du debug
 
-- Correction d'une parenthèse fermante en trop dans config_flow.py
-
----
-
-## 🧪 Tests
-
-- Ajout de 8 tests de validation de syntaxe
-- Vérification que tous les fichiers Python sont syntaxiquement corrects
-- Vérification de l'absence de marqueurs de conflit Git
-- Vérification de l'équilibre des parenthèses, accolades et crochets
+- Ajout de logs d'erreur dans le flux d'options pour mieux diagnostiquer les problèmes
 
 ---
 
 ## What's Changed
-* Fix syntax error by @Loule95450
-* Add syntax validation tests by @Loule95450
+* Add error handling in options flow by @Loule95450
 
-**Full Changelog**: https://github.com/Loule95450/HACS-Nexecur/compare/3.3.3...3.3.4
+**Full Changelog**: https://github.com/Loule95450/HACS-Nexecur/compare/3.3.4...3.3.5
