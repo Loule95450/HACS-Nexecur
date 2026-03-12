@@ -15,10 +15,12 @@
           "id_site": "Site ID (wiring code)",
           "password": "PIN / Password",
           "device_name": "Device name",
-          "disarm_code": "Disarm code (optional)"
+          "disarm_code": "Disarm code (optional)",
+          "arm_code": "Arm code (optional)"
         },
         "data_desc": {
-          "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration."
+          "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration.",
+          "arm_code": "This code can be added or modified anytime via Options."
         }
       },
       "hikvision_method": {
@@ -59,15 +61,14 @@
     "step": {
       "init": {
         "title": "Nexecur Options",
-        "description": "Add a disarm code (only once)",
-        "description_placeholders": {
-          "reason": "Disarm code is already set. To modify or remove it, you must delete the integration and reconfigure."
-        },
+        "description": "Manage alarm codes",
         "data": {
-          "disarm_code": "Disarm code"
+          "disarm_code": "Disarm code",
+          "arm_code": "Arm code"
         },
         "data_desc": {
-          "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration."
+          "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration.",
+          "arm_code": "This code can be added or modified anytime."
         }
       }
     }

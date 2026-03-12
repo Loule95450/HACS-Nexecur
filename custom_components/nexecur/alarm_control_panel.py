@@ -22,6 +22,7 @@ from .const import (
     CONF_PHONE,
     CONF_ACCOUNT,
     CONF_DISARM_CODE,
+    CONF_ARM_CODE,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -72,8 +73,10 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             self._attr_unique_id = f"nexecur_{identifier}"
             self._identifier = identifier
 
-        # Disarm code (optional)
+        # Disarm code (optional, cannot be changed once set)
         self._disarm_code = entry.data.get(CONF_DISARM_CODE)
+        # Arm code (optional, can be changed anytime)
+        self._arm_code = entry.data.get(CONF_ARM_CODE)
 
     @property
     def supported_features(self) -> AlarmControlPanelEntityFeature:
@@ -124,14 +127,15 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def code_format(self) -> str | None:
-        # Return appropriate format if disarm code is configured and not empty
-        if self._disarm_code:
+        # Return appropriate format if disarm code OR arm code is configured
+        if self._disarm_code or self._arm_code:
             return "text"
         return None
 
     @property
     def code_arm_required(self) -> bool:
-        return False
+        # Arm code required if configured
+        return bool(self._arm_code)
 
     @property
     def code_disarm_required(self) -> bool:
@@ -172,6 +176,11 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             _LOGGER.error("Failed to disarm: %s", err)
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
+        # Validate arm code if configured
+        if self._arm_code:
+            if code != self._arm_code:
+                raise ServiceValidationError("Invalid arm code")
+        
         try:
             if self._alarm_version == ALARM_VERSION_HIKVISION:
                 await self._client.async_set_armed_away()
@@ -194,6 +203,11 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             _LOGGER.error("Failed to arm away: %s", err)
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
+        # Validate arm code if configured
+        if self._arm_code:
+            if code != self._arm_code:
+                raise ServiceValidationError("Invalid arm code")
+        
         try:
             if self._alarm_version == ALARM_VERSION_HIKVISION:
                 await self._client.async_set_armed_home()

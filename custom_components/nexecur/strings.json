@@ -15,10 +15,12 @@
           "id_site": "ID Site (code de raccordement)",
           "password": "PIN / Mot de passe",
           "device_name": "Nom de l'appareil",
-          "disarm_code": "Code de désactivation (facultatif)"
+          "disarm_code": "Code de désactivation (facultatif)",
+          "arm_code": "Code d'activation (facultatif)"
         },
         "data_desc": {
-          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration."
+          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration.",
+          "arm_code": "Ce code peut être ajouté ou modifié à tout moment via les options."
         }
       },
       "hikvision_method": {
@@ -59,15 +61,14 @@
     "step": {
       "init": {
         "title": "Options Nexecur",
-        "description": "Ajouter un code de désactivation (une seule fois uniquement)",
-        "description_placeholders": {
-          "reason": "Le code de désactivation est déjà défini. Pour le modifier ou le supprimer, vous devez supprimer l'intégration et la reconfigurer."
-        },
+        "description": "Gérer les codes de l'alarme",
         "data": {
-          "disarm_code": "Code de désactivation"
+          "disarm_code": "Code de désactivation",
+          "arm_code": "Code d'activation"
         },
         "data_desc": {
-          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration."
+          "disarm_code": "Une fois défini, ce code ne peut plus être modifié ou supprimé sans supprimer l'intégration.",
+          "arm_code": "Ce code peut être ajouté ou modifié à tout moment."
         }
       }
     }

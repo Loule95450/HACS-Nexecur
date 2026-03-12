@@ -33,6 +33,7 @@ CONF_PASSWORD = "password"
 CONF_DEVICE_NAME = "device_name"
 CONF_LOGIN_METHOD = "login_method"
 CONF_DISARM_CODE = "disarm_code"
+CONF_ARM_CODE = "arm_code"
 
 # Videofied specific
 CONF_ID_SITE = "id_site"
