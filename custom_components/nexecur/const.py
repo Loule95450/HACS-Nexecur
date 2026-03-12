@@ -44,6 +44,3 @@ CONF_EMAIL = "email"
 CONF_ACCOUNT = "account"  # Stores the actual phone or email value
 CONF_COUNTRY_CODE = "country_code"
 CONF_SSID = "ssid"
-=======
-CONF_DISARM_CODE = "disarm_code"
->>>>>>> copilot/add-optional-alarm-disable-code
