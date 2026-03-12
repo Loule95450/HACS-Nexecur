@@ -21,3 +21,5 @@ wheels/
 *.egg
 .osgrep
 .venv/
+*.py[cod]
+*$py.class

@@ -10,6 +10,7 @@ from homeassistant.components.alarm_control_panel import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -20,6 +21,7 @@ from .const import (
     CONF_ID_SITE,
     CONF_PHONE,
     CONF_ACCOUNT,
+    CONF_DISARM_CODE,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -47,7 +49,6 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
     _attr_has_entity_name = True
     _attr_name = DEFAULT_NAME
     _attr_code_arm_required = False
-    _attr_code_disarm_required = False
 
     def __init__(
         self,
@@ -70,6 +71,9 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             identifier = entry.data.get(CONF_ID_SITE, "unknown")
             self._attr_unique_id = f"nexecur_{identifier}"
             self._identifier = identifier
+
+        # Disarm code (optional)
+        self._disarm_code = entry.data.get(CONF_DISARM_CODE)
 
     @property
     def supported_features(self) -> AlarmControlPanelEntityFeature:
@@ -120,6 +124,9 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def code_format(self) -> str | None:
+        # Return appropriate format if disarm code is configured and not empty
+        if self._disarm_code:
+            return "text"
         return None
 
     @property
@@ -128,7 +135,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def code_disarm_required(self) -> bool:
-        return False
+        return bool(self._disarm_code)
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -153,6 +160,11 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         return attrs
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
+        # Validate disarm code if configured and not empty
+        if self._disarm_code:
+            if code != self._disarm_code:
+                raise ServiceValidationError("Invalid disarm code")
+        
         try:
             await self._client.async_set_armed(False)
             await self.coordinator.async_request_refresh()

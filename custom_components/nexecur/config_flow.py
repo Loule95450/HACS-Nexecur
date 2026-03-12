@@ -16,6 +16,7 @@ from .const import (
     CONF_COUNTRY_CODE,
     CONF_SSID,
     CONF_LOGIN_METHOD,
+    CONF_DISARM_CODE,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
     LOGIN_METHOD_PHONE,
@@ -41,6 +42,7 @@ VIDEOFIED_SCHEMA = vol.Schema(
         vol.Required(CONF_ID_SITE): str,
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
+        vol.Optional(CONF_DISARM_CODE): str,
     }
 )
 
