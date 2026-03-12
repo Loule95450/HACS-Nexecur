@@ -244,18 +244,19 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Options flow to manage arm/disarm codes."""
         
-        # Check current codes
-        current_disarm_code = self.entry.data.get(CONF_DISARM_CODE)
-        current_arm_code = self.entry.data.get(CONF_ARM_CODE, "")
+        # Check current codes - handle None and missing keys
+        entry_data = self.entry.data or {}
+        current_disarm_code = entry_data.get(CONF_DISARM_CODE) or ""
+        current_arm_code = entry_data.get(CONF_ARM_CODE) or ""
 
         # If disarm code is already set, user cannot modify it
-        disarm_locked = bool(current_disarm_code)
+        disarm_locked = bool(entry_data.get(CONF_DISARM_CODE))
 
         if user_input is not None:
             new_arm_code = user_input.get(CONF_ARM_CODE, "")
             
             # Update only arm_code (disarm_code cannot be changed once set)
-            new_data = {**self.entry.data, CONF_ARM_CODE: new_arm_code}
+            new_data = {**entry_data, CONF_ARM_CODE: new_arm_code}
             
             self.hass.config_entries.async_update_entry(
                 self.entry,
@@ -268,14 +269,15 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         
         if not disarm_locked:
             # Can add disarm code if not set yet
-            options_schema_dict[vol.Optional(CONF_DISARM_CODE, default=current_disarm_code or "")] = str
+            options_schema_dict[vol.Optional(CONF_DISARM_CODE, default="")] = str
         
         # Arm code is always editable
-        options_schema_dict[vol.Optional(CONF_ARM_CODE, default=current_arm_code)] = str
+        options_schema_dict[vol.Optional(CONF_ARM_CODE, default="")] = str
 
         options_schema = vol.Schema(options_schema_dict)
 
         return self.async_show_form(
             step_id="init",
             data_schema=options_schema,
+        )
         )
