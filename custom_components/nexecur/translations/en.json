@@ -16,11 +16,13 @@
           "password": "PIN / Password",
           "device_name": "Device name",
           "disarm_code": "Disarm code (optional)",
-          "arm_code": "Arm code (optional)"
+          "arm_code": "Arm code (optional)",
+          "invert_status": "Invert status (if SP1/SP2 inverted)"
         },
         "data_desc": {
           "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration.",
-          "arm_code": "This code can be added or modified anytime via Options."
+          "arm_code": "This code can be added or modified anytime via Options.",
+          "invert_status": "Check if your Home and Away statuses are inverted (SP1=Full, SP2=Night)"
         }
       },
       "hikvision_method": {
@@ -72,7 +74,8 @@
           "arm_code_separate": "Arm code (different)",
           "use_same_code": "Use same code as disarm",
           "disarm_info": "Disarm code status",
-          "arm_info": "Arm code status"
+          "arm_info": "Arm code status",
+          "invert_status": "Invert status (if SP1/SP2 inverted)"
         },
         "data_options": {
           "yes": "Yes",
