@@ -3,10 +3,6 @@ from __future__ import annotations
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
-from homeassistant.helpers.schema_config_entry_flow import (
-    SchemaFlowFormStep,
-    SchemaOptionsFlowHandler,
-)
 
 from .const import (
     DOMAIN,
@@ -86,17 +82,80 @@ HIKVISION_EMAIL_SCHEMA = vol.Schema(
 )
 
 
-# Options flow using SchemaOptionsFlowHandler (modern way)
-OPTIONS_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_DISARM_CODE, default=""): str,
-        vol.Optional(CONF_ARM_CODE, default=""): str,
-    }
-)
+# Options flow using custom class with selects
+class NexecurOptionsFlow(config_entries.OptionsFlow):
+    """Custom options flow with selects."""
 
-OPTIONS_FLOW = {
-    "init": SchemaFlowFormStep(OPTIONS_SCHEMA),
-}
+    def __init__(self, entry):
+        self.entry = entry
+
+    async def async_step_init(self, user_input=None):
+        """Show options with selects."""
+        entry_data = dict(self.entry.data) if self.entry.data else {}
+        
+        disarm_code = entry_data.get(CONF_DISARM_CODE, "")
+        arm_code = entry_data.get(CONF_ARM_CODE, "")
+        
+        # Determine state
+        has_disarm_code = bool(disarm_code)
+        has_arm_code = bool(arm_code)
+        same_code = has_disarm_code and has_arm_code and disarm_code == arm_code
+        
+        if user_input is not None:
+            # Handle form submission
+            enable_disarm = user_input.get("enable_disarm", "no") == "yes"
+            enable_arm = user_input.get("enable_arm", "no") == "yes"
+            use_same_code = user_input.get("use_same_code", "yes") == "yes"
+            
+            new_data = dict(entry_data)
+            
+            # Handle disarm code
+            if enable_disarm:
+                new_disarm = user_input.get(CONF_DISARM_CODE, "")
+                if new_disarm:
+                    new_data[CONF_DISARM_CODE] = new_disarm
+            else:
+                new_data.pop(CONF_DISARM_CODE, None)
+            
+            # Handle arm code
+            if enable_arm:
+                if use_same_code:
+                    new_data[CONF_ARM_CODE] = new_data.get(CONF_DISARM_CODE, "")
+                else:
+                    new_arm = user_input.get("arm_code_separate", "")
+                    if new_arm:
+                        new_data[CONF_ARM_CODE] = new_arm
+            else:
+                new_data.pop(CONF_ARM_CODE, None)
+            
+            self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+            return self.async_create_entry(title="")
+
+        # Build schema based on current state
+        schema = {}
+        
+        # Disarm section - locked if set
+        if has_disarm_code:
+            schema[vol.Required("disarm_info", default="✅ Code de désarmement défini")] = str
+            schema[vol.Required("enable_disarm", default="yes")] = vol.In(["yes"])
+        else:
+            schema[vol.Required("enable_disarm", default="no")] = vol.In(["yes", "no"])
+        
+        # Arm section
+        if same_code:
+            schema[vol.Required("arm_info", default="✅ Même code que désarmement")] = str
+            schema[vol.Required("enable_arm", default="yes")] = vol.In(["yes"])
+        elif has_arm_code:
+            schema[vol.Required("enable_arm", default="yes")] = vol.In(["yes", "no"])
+            schema[vol.Required("use_same_code", default="no")] = vol.In(["yes", "no"])
+            schema[vol.Required("arm_code_separate", default=arm_code)] = str
+        else:
+            schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
+        )
 
 
 class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -252,4 +311,4 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        return SchemaOptionsFlowHandler(config_entry, OPTIONS_FLOW)
+        return NexecurOptionsFlow(config_entry)
