@@ -70,7 +70,8 @@
           "arm_code_separate": "Code d'armement (différent)",
           "use_same_code": "Utiliser le même code que désarmement",
           "disarm_info": "État du code de désarmement",
-          "arm_info": "État du code d'armement"
+          "arm_info": "État du code d'armement",
+          "invert_status": "Inverser le statut (si SP1/SP2 inversé)"
         },
         "data_options": {
           "yes": "Oui",

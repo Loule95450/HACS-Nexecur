@@ -18,6 +18,7 @@ from .const import (
     CONF_LOGIN_METHOD,
     CONF_DISARM_CODE,
     CONF_ARM_CODE,
+    CONF_INVERT_STATUS,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
     LOGIN_METHOD_PHONE,
@@ -45,6 +46,7 @@ VIDEOFIED_SCHEMA = vol.Schema(
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
         vol.Optional(CONF_DISARM_CODE): str,
         vol.Optional(CONF_ARM_CODE): str,
+        vol.Optional(CONF_INVERT_STATUS, default=False): bool,
     }
 )
 
@@ -151,6 +153,9 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         else:
             # No arm code - show option
             schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
+        
+        # Invert status option
+        schema[vol.Required(CONF_INVERT_STATUS, default=invert_status)] = bool
 
         return self.async_show_form(
             step_id="init",
