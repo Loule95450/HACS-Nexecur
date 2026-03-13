@@ -158,8 +158,10 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             # No arm code - show option
             schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
         
-        # Invert status option
-        schema[vol.Required(CONF_INVERT_STATUS, default=invert_status)] = bool
+        # Invert status option (Videofied only)
+        alarm_version = entry_data.get(CONF_ALARM_VERSION, ALARM_VERSION_VIDEOFIED)
+        if alarm_version == ALARM_VERSION_VIDEOFIED:
+            schema[vol.Required(CONF_INVERT_STATUS, default=invert_status)] = bool
 
         return self.async_show_form(
             step_id="init",
