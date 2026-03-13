@@ -107,10 +107,12 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             enable_arm = user_input.get("enable_arm", "no") == "yes"
             use_same_code = user_input.get("use_same_code", "yes") == "yes"
             
+            # Start with existing data to preserve values not in form
             new_data = dict(entry_data)
             
             # Handle disarm code
             if enable_disarm:
+                # Keep existing or use new
                 new_disarm = user_input.get(CONF_DISARM_CODE, "")
                 if new_disarm:
                     new_data[CONF_DISARM_CODE] = new_disarm
@@ -119,8 +121,8 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             
             # Handle arm code - can be set even without disarm code
             if enable_arm:
-                if use_same_code and enable_disarm:
-                    # Use same code as disarm (only if disarm is enabled)
+                if use_same_code:
+                    # Use same code as disarm
                     new_data[CONF_ARM_CODE] = new_data.get(CONF_DISARM_CODE, "")
                 else:
                     new_arm = user_input.get("arm_code_separate", "")
@@ -135,13 +137,13 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         # Build schema based on current state
         schema = {}
         
-        # Disarm section - locked if set
+        # Disarm section - show info and locked toggle
         if has_disarm_code:
             schema[vol.Required("disarm_info", default="✅ Code de désarmement défini")] = str
         else:
             schema[vol.Required("enable_disarm", default="no")] = vol.In(["yes", "no"])
         
-        # Arm section - can be set without disarm code
+        # Arm section - show options based on state
         if same_code:
             schema[vol.Required("arm_info", default="✅ Même code que désarmement")] = str
         elif has_arm_code:
@@ -149,7 +151,6 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             schema[vol.Required("use_same_code", default="no")] = vol.In(["yes", "no"])
             schema[vol.Required("arm_code_separate", default=arm_code)] = str
         else:
-            # No arm code - show option
             schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
 
         return self.async_show_form(
