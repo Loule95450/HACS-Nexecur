@@ -62,13 +62,21 @@
       "init": {
         "title": "Nexecur Options",
         "description": "Manage alarm codes",
-        "data": {
-          "disarm_code": "Disarm code",
-          "arm_code": "Arm code"
+        "description_placeholders": {
+          "hint": "Click Submit after changing an option to see additional fields."
         },
-        "data_desc": {
-          "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration.",
-          "arm_code": "This code can be added or modified anytime."
+        "data": {
+          "enable_disarm": "Enable disarm code",
+          "enable_arm": "Enable arm code",
+          "disarm_code": "Disarm code",
+          "arm_code_separate": "Arm code (different)",
+          "use_same_code": "Use same code as disarm",
+          "disarm_info": "Disarm code status",
+          "arm_info": "Arm code status"
+        },
+        "data_options": {
+          "yes": "Yes",
+          "no": "No"
         }
       }
     }

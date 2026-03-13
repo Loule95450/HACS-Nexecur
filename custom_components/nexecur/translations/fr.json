@@ -60,13 +60,21 @@
       "init": {
         "title": "Options Nexecur",
         "description": "Gérer les codes de l'alarme",
-        "data": {
-          "disarm_code": "Code de désactivation",
-          "arm_code": "Code d'activation"
+        "description_placeholders": {
+          "hint": "Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires."
         },
-        "data_desc": {
-          "disarm_code": "Une fois défini, ce code ne peut plus être modifié ou supprimé sans supprimer l'intégration.",
-          "arm_code": "Ce code peut être ajouté ou modifié à tout moment."
+        "data": {
+          "enable_disarm": "Activer le code de désarmement",
+          "enable_arm": "Activer le code d'armement",
+          "disarm_code": "Code de désarmement",
+          "arm_code_separate": "Code d'armement (différent)",
+          "use_same_code": "Utiliser le même code que désarmement",
+          "disarm_info": "État du code de désarmement",
+          "arm_info": "État du code d'armement"
+        },
+        "data_options": {
+          "yes": "Oui",
+          "no": "Non"
         }
       }
     }

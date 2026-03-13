@@ -117,9 +117,10 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             else:
                 new_data.pop(CONF_DISARM_CODE, None)
             
-            # Handle arm code
+            # Handle arm code - can be set even without disarm code
             if enable_arm:
-                if use_same_code:
+                if use_same_code and enable_disarm:
+                    # Use same code as disarm (only if disarm is enabled)
                     new_data[CONF_ARM_CODE] = new_data.get(CONF_DISARM_CODE, "")
                 else:
                     new_arm = user_input.get("arm_code_separate", "")
@@ -137,24 +138,26 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         # Disarm section - locked if set
         if has_disarm_code:
             schema[vol.Required("disarm_info", default="✅ Code de désarmement défini")] = str
-            schema[vol.Required("enable_disarm", default="yes")] = vol.In(["yes"])
         else:
             schema[vol.Required("enable_disarm", default="no")] = vol.In(["yes", "no"])
         
-        # Arm section
+        # Arm section - can be set without disarm code
         if same_code:
             schema[vol.Required("arm_info", default="✅ Même code que désarmement")] = str
-            schema[vol.Required("enable_arm", default="yes")] = vol.In(["yes"])
         elif has_arm_code:
             schema[vol.Required("enable_arm", default="yes")] = vol.In(["yes", "no"])
             schema[vol.Required("use_same_code", default="no")] = vol.In(["yes", "no"])
             schema[vol.Required("arm_code_separate", default=arm_code)] = str
         else:
+            # No arm code - show option
             schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
+            description_placeholders={
+                "hint": "Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires."
+            }
         )
 
 
