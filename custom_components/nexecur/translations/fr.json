@@ -15,10 +15,14 @@
           "id_site": "ID Site (code de câblage)",
           "password": "PIN / Mot de passe",
           "device_name": "Nom de l'appareil",
-          "disarm_code": "Code de désactivation (facultatif)"
+          "disarm_code": "Code de désactivation (facultatif)",
+          "arm_code": "Code d'activation (facultatif)",
+          "invert_status": "Inverser le statut (si SP1/SP2 inversé)"
         },
         "data_desc": {
-          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration."
+          "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration.",
+          "arm_code": "Ce code peut être ajouté ou modifié à tout moment via les options.",
+          "invert_status": "Cochez si vos statuts Home et Away sont inversés (SP1=Complet, SP2=Nuit)"
         }
       },
       "hikvision_method": {
@@ -70,7 +74,8 @@
           "arm_code_separate": "Code d'armement (différent)",
           "use_same_code": "Utiliser le même code que désarmement",
           "disarm_info": "État du code de désarmement",
-          "arm_info": "État du code d'armement"
+          "arm_info": "État du code d'armement",
+          "invert_status": "Inverser le statut (si SP1/SP2 inversé)"
         },
         "data_options": {
           "yes": "Oui",

@@ -18,6 +18,7 @@ from .const import (
     CONF_LOGIN_METHOD,
     CONF_DISARM_CODE,
     CONF_ARM_CODE,
+    CONF_INVERT_STATUS,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
     LOGIN_METHOD_PHONE,
@@ -45,6 +46,7 @@ VIDEOFIED_SCHEMA = vol.Schema(
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
         vol.Optional(CONF_DISARM_CODE): str,
         vol.Optional(CONF_ARM_CODE): str,
+        vol.Optional(CONF_INVERT_STATUS, default=False): bool,
     }
 )
 
@@ -95,6 +97,7 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         
         disarm_code = entry_data.get(CONF_DISARM_CODE, "")
         arm_code = entry_data.get(CONF_ARM_CODE, "")
+        invert_status = entry_data.get(CONF_INVERT_STATUS, False)
         
         # Determine state
         has_disarm_code = bool(disarm_code)
@@ -131,6 +134,9 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             else:
                 new_data.pop(CONF_ARM_CODE, None)
             
+            # Handle invert status
+            new_data[CONF_INVERT_STATUS] = user_input.get(CONF_INVERT_STATUS, False)
+            
             self.hass.config_entries.async_update_entry(self.entry, data=new_data)
             return self.async_create_entry(title="")
 
@@ -152,6 +158,11 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             schema[vol.Required("arm_code_separate", default=arm_code)] = str
         else:
             schema[vol.Required("enable_arm", default="no")] = vol.In(["yes", "no"])
+        
+        # Invert status option (Videofied only)
+        alarm_version = entry_data.get(CONF_ALARM_VERSION, ALARM_VERSION_VIDEOFIED)
+        if alarm_version == ALARM_VERSION_VIDEOFIED:
+            schema[vol.Required(CONF_INVERT_STATUS, default=invert_status)] = bool
 
         return self.async_show_form(
             step_id="init",
