@@ -23,3 +23,5 @@ wheels/
 .venv/
 *.py[cod]
 *$py.class
+hikvision_api_exemple/
+venv/
