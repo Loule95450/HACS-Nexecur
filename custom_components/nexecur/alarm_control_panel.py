@@ -10,7 +10,7 @@ from homeassistant.components.alarm_control_panel import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -169,9 +169,15 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        attrs = dict(self.coordinator.data or {})
-        attrs["alarm_version"] = self._alarm_version
-        return attrs
+        # Whitelist only: coordinator.data holds raw API responses which may
+        # contain credentials or other sensitive payloads
+        data = self.coordinator.data or {}
+        return {
+            "alarm_version": self._alarm_version,
+            "panel_status": data.get("panel_status"),
+            "panel_sp1_available": data.get("panel_sp1_available"),
+            "panel_sp2_available": data.get("panel_sp2_available"),
+        }
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         # Validate disarm code if configured and not empty
@@ -184,6 +190,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             await self.coordinator.async_request_refresh()
         except (NexecurError, HikvisionError) as err:
             _LOGGER.error("Failed to disarm: %s", err)
+            raise HomeAssistantError(f"Failed to disarm: {err}") from err
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         # Validate arm code if configured
@@ -211,6 +218,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             await self.coordinator.async_request_refresh()
         except (NexecurError, HikvisionError) as err:
             _LOGGER.error("Failed to arm away: %s", err)
+            raise HomeAssistantError(f"Failed to arm away: {err}") from err
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
         # Validate arm code if configured
@@ -234,3 +242,4 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             await self.coordinator.async_request_refresh()
         except (NexecurError, HikvisionError) as err:
             _LOGGER.error("Failed to arm home: %s", err)
+            raise HomeAssistantError(f"Failed to arm home: {err}") from err

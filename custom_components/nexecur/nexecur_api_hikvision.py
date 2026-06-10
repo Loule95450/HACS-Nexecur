@@ -154,7 +154,8 @@ class NexecurHikvisionClient:
                 resp.raise_for_status()
                 res_json = await resp.json()
 
-            _LOGGER.debug("Login response: %s", res_json)
+            # Never log the full response: it contains the auth sessionId
+            _LOGGER.debug("Login response meta: %s", res_json.get("meta"))
 
             meta = res_json.get("meta", {})
             if str(meta.get("code")) != "200":
@@ -168,8 +169,9 @@ class NexecurHikvisionClient:
             # Update base URL if redirected
             login_area = res_json.get("loginArea", {})
             if login_area.get("apiDomain"):
-                domain = login_area["apiDomain"]
-                self._base_url = f"https://{domain}" if not domain.startswith("http") else domain
+                # Always force HTTPS, even if the server returns a plain-http domain
+                domain = login_area["apiDomain"].removeprefix("https://").removeprefix("http://")
+                self._base_url = f"https://{domain}"
 
             _LOGGER.info("Hikvision login successful for user: %s", self._user_info.get("username", "unknown"))
 
@@ -268,7 +270,9 @@ class NexecurHikvisionClient:
 
     def _calculate_digest_auth(self, method: str, uri: str, nonce: str, realm: str) -> str:
         """Calculate digest authentication header."""
-        username = self._user_info.get("username", self._account)
+        # Strip control characters: this value ends up in a hand-built HTTP
+        # header inside the ISAPI tunnel, so CR/LF would allow header injection
+        username = re.sub(r"[\r\n]", "", self._user_info.get("username", self._account))
 
         # Derive password using salts
         auth_password = self._security_info.get("auth_hash")
@@ -386,12 +390,16 @@ class NexecurHikvisionClient:
         return False, raw_response
 
     def _get_last_known_or_default_state(self) -> NexecurState:
-        """Return the last known state if available, otherwise a default disarmed state."""
+        """Return the last known state, or raise if the real state was never observed.
+
+        Never default to "disarmed": showing a disarmed panel while the alarm
+        may actually be armed is a fail-open for a security system. Raising
+        makes the coordinator mark the entity unavailable instead.
+        """
         if self._last_known_state is not None:
             _LOGGER.debug("Returning last known state: status=%d", self._last_known_state.status)
             return self._last_known_state
-        _LOGGER.debug("No last known state available, returning default disarmed state")
-        return NexecurState(status=0, panel_sp1_available=True, panel_sp2_available=True, raw={})
+        raise NexecurError("Alarm status unavailable and no previously known state")
 
     async def async_get_status(self) -> NexecurState:
         """Get the current alarm status."""

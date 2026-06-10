@@ -228,30 +228,34 @@ class NexecurClient:
         
         for i, payload in enumerate(request_variations):
             try:
-                _LOGGER.info("Requesting stream for device %s (attempt %d) with payload: %s", device_serial, i+1, payload)
+                _LOGGER.debug("Requesting stream for device %s (attempt %d) with payload: %s", device_serial, i+1, payload)
                 data = await self._post_json(STREAM_URI, json=payload, token=self._token)
-                _LOGGER.info("Stream response for device %s (attempt %d): %s", device_serial, i+1, data)
-                
+                # Never log the response body or the URI: stream URLs may embed credentials
+                _LOGGER.debug(
+                    "Stream response for device %s (attempt %d): status=%s message=%s has_uri=%s",
+                    device_serial, i+1, data.get("status"), data.get("message"), bool(data.get("uri")),
+                )
+
                 # Check for success response
                 if data.get("message") == "OK" and data.get("status") == 0:
                     stream_url = data.get("uri")
                     if stream_url:
-                        _LOGGER.info("✓ Stream URL found for device %s: %s", device_serial, stream_url)
+                        _LOGGER.debug("Stream URL found for device %s", device_serial)
                         return stream_url
-                
+
                 # Check for other possible success indicators
                 if "uri" in data and data["uri"]:
                     stream_url = data["uri"]
-                    _LOGGER.info("✓ Stream URL found for device %s (no status check): %s", device_serial, stream_url)
+                    _LOGGER.debug("Stream URL found for device %s (no status check)", device_serial)
                     return stream_url
-                
+
                 # If status indicates error, try next variation
                 if data.get("status") != 0:
-                    _LOGGER.info("Status error (%s) for device %s attempt %d, trying next format", data.get("status"), device_serial, i+1)
+                    _LOGGER.debug("Status error (%s) for device %s attempt %d, trying next format", data.get("status"), device_serial, i+1)
                     continue
                 else:
                     # Status is 0 but no URI, this might be the expected format but device doesn't support streaming
-                    _LOGGER.info("Device %s returned OK status but no URI - likely doesn't support streaming", device_serial)
+                    _LOGGER.debug("Device %s returned OK status but no URI - likely doesn't support streaming", device_serial)
                     return None
                     
             except Exception as err:
@@ -260,7 +264,7 @@ class NexecurClient:
                     return None
                 continue
         
-        _LOGGER.info("All stream request formats failed for device %s", device_serial)
+        _LOGGER.debug("All stream request formats failed for device %s", device_serial)
         return None
 
     # --- Properties ---

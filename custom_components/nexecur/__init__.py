@@ -31,6 +31,10 @@ _LOGGER = logging.getLogger(__name__)
 
 SCAN_INTERVAL = timedelta(seconds=30)
 
+# Keys from raw API responses that must never reach coordinator.data:
+# they would end up exposed in entity state attributes
+SENSITIVE_RAW_KEYS = {"token", "password", "pin", "salt", "pwd", "sessionId", "session_id"}
+
 # Type alias for both client types
 NexecurClientType = Union[NexecurClient, NexecurHikvisionClient]
 
@@ -63,10 +67,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             session=session,
         )
         await client.async_login()
-        _LOGGER.info(
-            "Nexecur Hikvision debug: session_id=%s account=%s",
-            client.token[:20] + "..." if client.token else "",
-            account[:6] + "***" if account else "",
+        _LOGGER.debug(
+            "Nexecur Hikvision setup: session=%s account=%s",
+            "obtained" if client.token else "missing",
+            account[:4] + "***" if account else "",
         )
     else:
         # Videofied client (default)
@@ -78,9 +82,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         await client.async_login()
 
-        _LOGGER.info(
-            "Nexecur Videofied debug: token=%s id_site=%s id_device=%s",
-            getattr(client, "token", "")[:20] + "..." if getattr(client, "token", "") else "",
+        _LOGGER.debug(
+            "Nexecur Videofied setup: token=%s id_site=%s id_device=%s",
+            "obtained" if getattr(client, "token", "") else "missing",
             entry.data.get(CONF_ID_SITE),
             getattr(client, "id_device", ""),
         )
@@ -98,14 +102,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Start with existing coordinator data to preserve switch states
             data = coordinator.data.copy() if coordinator.data else {}
 
-            # Update with current panel status
+            # Update with current panel status. Strip credential-like keys from
+            # the raw API response so they never leak into entity attributes.
+            safe_raw = {
+                k: v for k, v in (state.raw or {}).items() if k not in SENSITIVE_RAW_KEYS
+            }
             data.update(
                 {
                     "panel_status": state.status,
                     "panel_sp1_available": state.panel_sp1_available,
                     "panel_sp2_available": state.panel_sp2_available,
                     "alarm_version": alarm_version,
-                    **(state.raw or {}),
+                    **safe_raw,
                 }
             )
 

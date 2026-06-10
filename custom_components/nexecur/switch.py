@@ -181,7 +181,8 @@ class NexecurCameraStreamSwitch(CoordinatorEntity, SwitchEntity):
 
         return {
             "device_serial": self._device_serial,
-            "stream_url": switch_data.get("stream_url"),
+            # Only expose whether a stream exists: the URL may embed credentials
+            "has_stream": bool(switch_data.get("stream_url")),
             "stream_expires_at": switch_data.get("expires_at"),
             "last_activated": switch_data.get("last_activated"),
             "device_source": self._device_data.get("source"),
