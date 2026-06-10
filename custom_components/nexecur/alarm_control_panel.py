@@ -23,6 +23,7 @@ from .const import (
     CONF_ACCOUNT,
     CONF_DISARM_CODE,
     CONF_ARM_CODE,
+    CONF_INVERT_STATUS,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -77,6 +78,7 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         self._disarm_code = entry.data.get(CONF_DISARM_CODE)
         # Arm code (optional, can be changed anytime)
         self._arm_code = entry.data.get(CONF_ARM_CODE)
+        self._invert_status = entry.data.get(CONF_INVERT_STATUS, False)
 
     @property
     def supported_features(self) -> AlarmControlPanelEntityFeature:
@@ -109,6 +111,14 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         status = int(data.get("panel_status", 0))
         panel_sp1_available = data.get("panel_sp1_available", True)
         panel_sp2_available = data.get("panel_sp2_available", False)
+
+        # Handle inverted status for some Videofied installations
+        if self._invert_status and self._alarm_version == ALARM_VERSION_VIDEOFIED:
+            # Swap status 1 and 2
+            if status == 1:
+                status = 2
+            elif status == 2:
+                status = 1
 
         if status == 0:
             return AlarmControlPanelState.DISARMED
