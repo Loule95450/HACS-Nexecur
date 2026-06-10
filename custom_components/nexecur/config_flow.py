@@ -136,7 +136,7 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
             new_data[CONF_INVERT_STATUS] = user_input.get(CONF_INVERT_STATUS, False)
             
             self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-            return self.async_create_entry(title="")
+            return self.async_create_entry(title="", data={})
 
         # Build schema based on current state
         schema = {}
