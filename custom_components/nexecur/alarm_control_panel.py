@@ -27,6 +27,7 @@ from .const import (
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
+from .alarm_mapping import resolve_videofied_arm_mode
 from .nexecur_api import NexecurClient, NexecurError
 from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurError as HikvisionError
 
@@ -210,7 +211,8 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
                     _LOGGER.error("Cannot arm: SP1 not available")
                     return
 
-                if panel_sp2_available:
+                arm_mode = resolve_videofied_arm_mode("away", panel_sp2_available, self._invert_status)
+                if arm_mode == "away":
                     await self._client.async_set_armed_away()
                 else:
                     await self._client.async_set_armed_home()
@@ -232,12 +234,17 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             else:
                 data = self.coordinator.data
                 panel_sp1_available = data.get("panel_sp1_available", True) if data else True
+                panel_sp2_available = data.get("panel_sp2_available", False) if data else False
 
                 if not panel_sp1_available:
                     _LOGGER.error("Cannot arm home: SP1 not available")
                     return
 
-                await self._client.async_set_armed_home()
+                arm_mode = resolve_videofied_arm_mode("home", panel_sp2_available, self._invert_status)
+                if arm_mode == "away":
+                    await self._client.async_set_armed_away()
+                else:
+                    await self._client.async_set_armed_home()
 
             await self.coordinator.async_request_refresh()
         except (NexecurError, HikvisionError) as err:
