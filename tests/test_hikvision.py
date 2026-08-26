@@ -358,31 +358,36 @@ class TestLoginErrorMapping:
         )
 
     @pytest.mark.asyncio
-    async def test_chinese_feature_code_error_requests_enrolment(self, client):
-        """The exact error seen in the wild must trigger the SMS flow."""
-        client.async_send_mfa_code = AsyncMock()
+    async def test_real_world_6002_is_an_enrolment_request(self, client):
+        """The exact code and message observed in production."""
+        with pytest.raises(NexecurMfaRequired):
+            await client._handle_login_error(CODE_MFA_REQUIRED, "硬件特征码校验失败")
 
+    @pytest.mark.asyncio
+    async def test_chinese_message_alone_is_enough(self, client):
+        """Match on the message too, in case the code ever differs."""
         with pytest.raises(NexecurMfaRequired):
             await client._handle_login_error("1", "硬件特征码校验失败")
 
-        client.async_send_mfa_code.assert_awaited_once()
-
     @pytest.mark.asyncio
-    async def test_mfa_required_code_requests_enrolment(self, client):
-        client.async_send_mfa_code = AsyncMock()
-
-        with pytest.raises(NexecurMfaRequired):
-            await client._handle_login_error(CODE_MFA_REQUIRED, "MFA required")
-
-        client.async_send_mfa_code.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_invalid_code_does_not_resend_sms(self, client):
-        """Re-sending would invalidate the code the user is typing."""
-        client.async_send_mfa_code = AsyncMock()
-
+    async def test_invalid_code_is_still_an_enrolment_request(self, client):
+        """A wrong code must re-prompt, not fall through to a hard failure."""
         with pytest.raises(NexecurMfaRequired):
             await client._handle_login_error(CODE_MFA_INVALID, "bad code")
+
+    @pytest.mark.asyncio
+    async def test_enrolment_never_sends_a_code_itself(self, client):
+        """Home Assistant retries setup on a backoff.
+
+        Sending from here would issue a fresh code on every retry, each one
+        invalidating the last, so the user could never type a valid one.
+        The reauth flow owns the single send.
+        """
+        client.async_send_mfa_code = AsyncMock()
+
+        for code in (CODE_MFA_REQUIRED, CODE_MFA_INVALID):
+            with pytest.raises(NexecurMfaRequired):
+                await client._handle_login_error(code, "硬件特征码校验失败")
 
         client.async_send_mfa_code.assert_not_awaited()
 
