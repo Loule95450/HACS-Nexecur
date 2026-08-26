@@ -70,6 +70,10 @@ class NexecurHikvisionClient:
         device_name: str = "Home Assistant",
         session: Optional[ClientSession] = None,
         feature_code: Optional[str] = None,
+        session_id: str = "",
+        rf_session_id: str = "",
+        user_info: Optional[Dict[str, Any]] = None,
+        api_domain: str = "",
     ) -> None:
         self._account = self._format_account(country_code, phone)
         self._password = password
@@ -80,9 +84,13 @@ class NexecurHikvisionClient:
         # which it now refuses ("hardware feature code verification failed").
         self._feature_code = feature_code or self._generate_feature_code()
         self._session: Optional[ClientSession] = session
-        self._base_url = GLOBAL_API_URL
-        self._session_id: str = ""
-        self._user_info: Dict[str, Any] = {}
+        self._base_url = f"https://{api_domain}" if api_domain else GLOBAL_API_URL
+        # A stored session is what actually keeps this terminal trusted: the
+        # cloud refuses a plain password login from a terminal it has not
+        # seen, even one whose feature code is already enrolled.
+        self._session_id: str = session_id
+        self._rf_session_id: str = rf_session_id
+        self._user_info: Dict[str, Any] = dict(user_info or {})
         self._security_info: Dict[str, Any] = {}
         self._devices: List[Dict[str, Any]] = []
         self._current_device_serial: str = ""
@@ -189,6 +197,66 @@ class NexecurHikvisionClient:
         _LOGGER.error("Login failed [%s]: %s", code, reason)
         raise NexecurAuthError(f"Login failed [{code}]: {reason}")
 
+    async def _async_refresh_session(self) -> bool:
+        """Renew the session from the refresh token.
+
+        Returns True when the session is usable afterwards. A False return
+        means the caller has to fall back to a full login.
+        """
+        session = await self._session_ensure()
+        url = f"{self._base_url}/v3/apigateway/login"
+        data = {
+            "refreshSessionId": self._rf_session_id,
+            "featureCode": self._feature_code,
+        }
+
+        try:
+            async with session.put(url, data=data, headers=self._get_headers(), timeout=30) as resp:
+                resp.raise_for_status()
+                res_json = await resp.json()
+        except Exception as err:
+            _LOGGER.warning("Could not refresh the Nexecur session: %s", err)
+            return False
+
+        meta = res_json.get("meta", {})
+        code = str(meta.get("code"))
+        if code != CODE_OK:
+            # 403 means the refresh token itself is spent; anything else is
+            # unexpected but equally unrecoverable without a fresh login.
+            _LOGGER.info(
+                "Session refresh refused [%s]: %s. Falling back to a full login.",
+                code,
+                meta.get("message", "Unknown error"),
+            )
+            return False
+
+        info = res_json.get("sessionInfo", {})
+        self._session_id = info.get("sessionId", "")
+        self._rf_session_id = info.get("refreshSessionId", self._rf_session_id)
+        if not self._session_id:
+            return False
+
+        _LOGGER.debug("Nexecur session refreshed without a new login")
+        return True
+
+    async def async_ensure_session(self) -> None:
+        """Get a usable session, preferring a refresh over a new login.
+
+        The cloud only trusts terminals it already knows, so a full login is a
+        last resort: it triggers the enrolment challenge every single time.
+        """
+        # Keyed on the refresh token alone: callers clear _session_id when they
+        # hit a 401, and that is exactly when a refresh is most useful.
+        if self._rf_session_id:
+            if await self._async_refresh_session():
+                await self._fetch_devices()
+                return
+            # The stored session is dead; don't replay it against the API.
+            self._session_id = ""
+            self._rf_session_id = ""
+
+        await self.async_login()
+
     async def async_send_mfa_code(self) -> None:
         """Ask the cloud to text a verification code for terminal enrolment."""
         session = await self._session_ensure()
@@ -254,7 +322,9 @@ class NexecurHikvisionClient:
                 error_msg = meta.get("message", "Unknown error")
                 await self._handle_login_error(code, error_msg)
 
-            self._session_id = res_json["loginSession"]["sessionId"]
+            login_session = res_json["loginSession"]
+            self._session_id = login_session["sessionId"]
+            self._rf_session_id = login_session.get("rfSessionId", "")
             self._user_info = res_json.get("loginUser", {})
 
             # Update base URL if redirected
@@ -434,7 +504,7 @@ class NexecurHikvisionClient:
                     )
                     self._session_id = ""
                     try:
-                        await self.async_login()
+                        await self.async_ensure_session()
                         # Retry the request once with new session
                         return await self._send_isapi(device_serial, method, uri, payload, digest_auth, _retry=False)
                     except Exception as login_err:
@@ -495,7 +565,7 @@ class NexecurHikvisionClient:
     async def async_get_status(self) -> NexecurState:
         """Get the current alarm status."""
         if not self._session_id:
-            await self.async_login()
+            await self.async_ensure_session()
 
         if not self._current_device_serial:
             _LOGGER.warning("No device serial available")
@@ -609,7 +679,7 @@ class NexecurHikvisionClient:
     async def async_get_sub_devices(self) -> Dict[str, List[Dict[str, Any]]]:
         """Fetch all sub-devices (zones, keypads, sirens) with pagination."""
         if not self._session_id:
-            await self.async_login()
+            await self.async_ensure_session()
 
         if not self._current_device_serial:
             return {"zones": [], "keypads": [], "sirens": []}
@@ -715,7 +785,7 @@ class NexecurHikvisionClient:
     async def async_set_armed_home(self) -> None:
         """Set alarm to home/stay mode."""
         if not self._session_id:
-            await self.async_login()
+            await self.async_ensure_session()
 
         if not self._current_device_serial:
             raise NexecurError("No device available")
@@ -738,7 +808,7 @@ class NexecurHikvisionClient:
     async def async_set_armed_away(self) -> None:
         """Set alarm to away mode."""
         if not self._session_id:
-            await self.async_login()
+            await self.async_ensure_session()
 
         if not self._current_device_serial:
             raise NexecurError("No device available")
@@ -761,7 +831,7 @@ class NexecurHikvisionClient:
     async def _disarm(self) -> None:
         """Disarm the alarm."""
         if not self._session_id:
-            await self.async_login()
+            await self.async_ensure_session()
 
         if not self._current_device_serial:
             raise NexecurError("No device available")
@@ -804,6 +874,21 @@ class NexecurHikvisionClient:
     def feature_code(self) -> str:
         """Return the terminal feature code, to be persisted by the caller."""
         return self._feature_code
+
+    @property
+    def rf_session_id(self) -> str:
+        """Return the refresh token, to be persisted by the caller."""
+        return self._rf_session_id
+
+    @property
+    def user_info(self) -> Dict[str, Any]:
+        """Return the login user info; needed for headers after a refresh."""
+        return self._user_info
+
+    @property
+    def api_domain(self) -> str:
+        """Return the resolved API domain, so it survives a restart."""
+        return self._base_url.removeprefix("https://")
 
     @property
     def devices(self) -> List[Dict[str, Any]]:

@@ -23,6 +23,10 @@ from .const import (
     CONF_COUNTRY_CODE,
     CONF_SSID,
     CONF_FEATURE_CODE,
+    CONF_SESSION_ID,
+    CONF_RF_SESSION_ID,
+    CONF_USER_INFO,
+    CONF_API_DOMAIN,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -51,19 +55,45 @@ def _get_alarm_version(entry: ConfigEntry) -> str:
     return entry.data.get(CONF_ALARM_VERSION, ALARM_VERSION_VIDEOFIED)
 
 
-def _persist_feature_code(
+# Entry keys that hold a rotating session rather than user configuration.
+# They change on their own during normal operation, so a change to one of them
+# must not be mistaken for the user editing the entry.
+SESSION_KEYS = frozenset(
+    {CONF_FEATURE_CODE, CONF_SESSION_ID, CONF_RF_SESSION_ID, CONF_USER_INFO, CONF_API_DOMAIN}
+)
+
+
+def _reload_signature(entry: ConfigEntry) -> tuple:
+    """The part of an entry that actually warrants a reload when it changes."""
+    return (
+        {k: v for k, v in entry.data.items() if k not in SESSION_KEYS},
+        dict(entry.options),
+    )
+
+
+def hikvision_session_data(client: NexecurHikvisionClient) -> dict:
+    """Everything about a Hikvision client that must survive a restart."""
+    return {
+        CONF_FEATURE_CODE: client.feature_code,
+        CONF_SESSION_ID: client.token,
+        CONF_RF_SESSION_ID: client.rf_session_id,
+        CONF_USER_INFO: client.user_info,
+        CONF_API_DOMAIN: client.api_domain,
+    }
+
+
+def _persist_session(
     hass: HomeAssistant, entry: ConfigEntry, client: NexecurHikvisionClient
 ) -> None:
-    """Store the terminal feature code on the entry if it isn't there yet.
+    """Write the current session back to the entry when it changed.
 
-    Entries created before feature-code persistence get one written on their
-    next setup, so existing installs upgrade without being reconfigured.
+    Entries created before session persistence get one written on their next
+    successful setup, so existing installs upgrade without being reconfigured.
     """
-    if entry.data.get(CONF_FEATURE_CODE) == client.feature_code:
+    fresh = hikvision_session_data(client)
+    if all(entry.data.get(k) == v for k, v in fresh.items()):
         return
-    hass.config_entries.async_update_entry(
-        entry, data={**entry.data, CONF_FEATURE_CODE: client.feature_code}
-    )
+    hass.config_entries.async_update_entry(entry, data={**entry.data, **fresh})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -87,16 +117,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
             session=session,
             feature_code=entry.data.get(CONF_FEATURE_CODE),
+            session_id=entry.data.get(CONF_SESSION_ID, ""),
+            rf_session_id=entry.data.get(CONF_RF_SESSION_ID, ""),
+            user_info=entry.data.get(CONF_USER_INFO),
+            api_domain=entry.data.get(CONF_API_DOMAIN, ""),
         )
         try:
-            await client.async_login()
+            # Refresh the stored session rather than logging in again: a fresh
+            # login from an untrusted terminal is what triggers the challenge.
+            await client.async_ensure_session()
         except NexecurMfaRequired as err:
-            # Persist the feature code before asking for the code: the SMS was
-            # sent for this exact one, so reauth has to reuse it.
-            _persist_feature_code(hass, entry, client)
+            # Keep the feature code the challenge was issued against.
+            _persist_session(hass, entry, client)
             raise ConfigEntryAuthFailed(str(err)) from err
 
-        _persist_feature_code(hass, entry, client)
+        _persist_session(hass, entry, client)
         _LOGGER.debug(
             "Nexecur Hikvision setup: session=%s account=%s",
             "obtained" if client.token else "missing",
@@ -186,6 +221,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data["keypads"] = keypads
             data["sirens"] = sirens
 
+            # The cloud rotates the session on every refresh; keep the stored
+            # copy current or the next restart falls back to a full login.
+            if alarm_version == ALARM_VERSION_HIKVISION:
+                _persist_session(hass, entry, client)
+
             return data
         except NexecurMfaRequired as err:
             # The cloud dropped this terminal's enrolment while we were running.
@@ -208,6 +248,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "client": client,
         "coordinator": coordinator,
         "alarm_version": alarm_version,
+        "reload_signature": _reload_signature(entry),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -216,7 +257,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when its data is updated from the options flow."""
+    """Reload the entry when its configuration is updated from the options flow.
+
+    Skipped when only the stored session rotated: that happens on every session
+    refresh, and reloading there would refresh again and loop forever.
+    """
+    stored = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if stored is not None:
+        signature = _reload_signature(entry)
+        if stored.get("reload_signature") == signature:
+            return
+        stored["reload_signature"] = signature
+
     await hass.config_entries.async_reload(entry.entry_id)
 
 

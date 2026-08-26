@@ -49,5 +49,12 @@ CONF_SSID = "ssid"
 # Must stay identical across restarts: the cloud binds it to the account
 # as a trusted terminal, and rejects unknown ones.
 CONF_FEATURE_CODE = "feature_code"
-# One-time code texted by the cloud to enrol a new terminal
+# One-time code sent by the cloud to enrol a new terminal
 CONF_SMS_CODE = "sms_code"
+# Persisted Hikvision session. The cloud refuses a plain password login from a
+# terminal it does not already trust, so the session -- refreshed rather than
+# re-created -- is what keeps the integration working across restarts.
+CONF_SESSION_ID = "session_id"
+CONF_RF_SESSION_ID = "rf_session_id"
+CONF_USER_INFO = "user_info"
+CONF_API_DOMAIN = "api_domain"

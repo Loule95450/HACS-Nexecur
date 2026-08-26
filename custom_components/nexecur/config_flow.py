@@ -282,8 +282,11 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._data.update(user_input)
                 # Store account for unified access
                 self._data[CONF_ACCOUNT] = user_input[CONF_PHONE]
-                # Keep the terminal fingerprint the cloud just accepted
-                self._data[CONF_FEATURE_CODE] = client.feature_code
+                # Keep the session the cloud just handed us: re-logging in from
+                # this terminal later would trigger the enrolment challenge.
+                from . import hikvision_session_data
+
+                self._data.update(hikvision_session_data(client))
                 await self.async_set_unique_id(f"hikvision_{user_input[CONF_PHONE]}")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
@@ -322,8 +325,11 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._data.update(user_input)
                 # Store account for unified access
                 self._data[CONF_ACCOUNT] = user_input[CONF_EMAIL]
-                # Keep the terminal fingerprint the cloud just accepted
-                self._data[CONF_FEATURE_CODE] = client.feature_code
+                # Keep the session the cloud just handed us: re-logging in from
+                # this terminal later would trigger the enrolment challenge.
+                from . import hikvision_session_data
+
+                self._data.update(hikvision_session_data(client))
                 await self.async_set_unique_id(f"hikvision_{user_input[CONF_EMAIL]}")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
@@ -394,9 +400,11 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except Exception:
                     errors["base"] = "unknown"
                 else:
+                    from . import hikvision_session_data
+
                     self.hass.config_entries.async_update_entry(
                         entry,
-                        data={**entry.data, CONF_FEATURE_CODE: client.feature_code},
+                        data={**entry.data, **hikvision_session_data(client)},
                     )
                     await self.hass.config_entries.async_reload(entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
