@@ -8,7 +8,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 
 from aiohttp import ClientSession
 
@@ -23,6 +23,30 @@ class NexecurError(Exception):
 
 class NexecurAuthError(NexecurError):
     """Authentication error."""
+
+
+class NexecurMfaRequired(NexecurAuthError):
+    """The cloud refuses this terminal until it is enrolled with an SMS code.
+
+    Raised when logging in from a featureCode the account has never seen.
+    A verification code has been sent; retry the login passing ``sms_code``.
+    """
+
+
+# Meta codes returned by the Hikvision cloud on /v3/users/login
+CODE_OK = "200"
+CODE_MFA_INVALID = "1012"
+CODE_BAD_ACCOUNT = "1013"
+CODE_BAD_PASSWORD = "1014"
+CODE_USER_LOCKED = "1015"
+CODE_MFA_REQUIRED = "6002"
+
+# Human-readable reasons for the codes we can explain to the user.
+AUTH_ERROR_MESSAGES = {
+    CODE_BAD_ACCOUNT: "Unknown account",
+    CODE_BAD_PASSWORD: "Incorrect password",
+    CODE_USER_LOCKED: "Account locked by the cloud",
+}
 
 
 @dataclass
@@ -45,12 +69,16 @@ class NexecurHikvisionClient:
         ssid: str = "",
         device_name: str = "Home Assistant",
         session: Optional[ClientSession] = None,
+        feature_code: Optional[str] = None,
     ) -> None:
         self._account = self._format_account(country_code, phone)
         self._password = password
         self._ssid = ssid
         self._device_name = device_name
-        self._feature_code = self._generate_feature_code()
+        # Reuse the caller's feature code when there is one. Generating a fresh
+        # one on every start makes the cloud see a brand new terminal each time,
+        # which it now refuses ("hardware feature code verification failed").
+        self._feature_code = feature_code or self._generate_feature_code()
         self._session: Optional[ClientSession] = session
         self._base_url = GLOBAL_API_URL
         self._session_id: str = ""
@@ -82,7 +110,11 @@ class NexecurHikvisionClient:
 
     @staticmethod
     def _generate_feature_code() -> str:
-        """Generate a unique feature code."""
+        """Generate a feature code for a terminal that has none yet.
+
+        Only ever called once per config entry: the result is persisted and
+        replayed on every subsequent login. See CONF_FEATURE_CODE.
+        """
         return hashlib.md5(str(uuid.uuid4()).encode()).hexdigest()
 
     @staticmethod
@@ -126,8 +158,62 @@ class NexecurHikvisionClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def async_login(self) -> None:
-        """Authenticate with the Hikvision cloud."""
+    async def _handle_login_error(self, code: str, error_msg: str) -> NoReturn:
+        """Turn a failed login meta code into a typed, actionable exception."""
+        # The cloud rejects a feature code it has never seen. Depending on the
+        # firmware it answers either 6002, or a localised "hardware feature
+        # code verification failed" message; both mean the same thing, so match
+        # on the message too rather than on the code alone.
+        needs_enrolment = (
+            code in (CODE_MFA_REQUIRED, CODE_MFA_INVALID)
+            or "\u7279\u5f81\u7801" in error_msg  # 特征码 = "feature code"
+        )
+
+        if needs_enrolment:
+            _LOGGER.warning(
+                "This Home Assistant terminal is not enrolled on the account "
+                "(code %s: %s). Requesting a verification code.",
+                code,
+                error_msg,
+            )
+            if code != CODE_MFA_INVALID:
+                # Don't re-send on a wrong code: the previous one is still valid.
+                await self.async_send_mfa_code()
+            raise NexecurMfaRequired(
+                f"Terminal enrolment required [{code}]: {error_msg}"
+            )
+
+        reason = AUTH_ERROR_MESSAGES.get(code, error_msg)
+        _LOGGER.error("Login failed [%s]: %s", code, reason)
+        raise NexecurAuthError(f"Login failed [{code}]: {reason}")
+
+    async def async_send_mfa_code(self) -> None:
+        """Ask the cloud to text a verification code for terminal enrolment."""
+        session = await self._session_ensure()
+        url = f"{self._base_url}/v3/sms/nologin/checkcode"
+        data = {"from": self._account, "bizType": "TERMINAL_BIND"}
+
+        try:
+            async with session.post(url, data=data, headers=self._get_headers(), timeout=30) as resp:
+                resp.raise_for_status()
+                res_json = await resp.json()
+        except Exception as err:
+            raise NexecurAuthError(f"Could not request a verification code: {err}") from err
+
+        meta = res_json.get("meta", {})
+        if str(meta.get("code")) != CODE_OK:
+            raise NexecurAuthError(
+                f"Could not request a verification code: "
+                f"[{meta.get('code')}] {meta.get('message', 'Unknown error')}"
+            )
+        _LOGGER.info("Verification code requested for terminal enrolment")
+
+    async def async_login(self, sms_code: Optional[str] = None) -> None:
+        """Authenticate with the Hikvision cloud.
+
+        Pass ``sms_code`` to enrol this terminal's feature code on the account;
+        this is required the first time a given feature code is used.
+        """
         session = await self._session_ensure()
         url = f"{self._base_url}/v3/users/login/v2"
 
@@ -138,12 +224,15 @@ class NexecurHikvisionClient:
             "cuName": "aVBob25l",  # Base64 for "iPhone"
             "pushExtJson": '{\n  "language" : "zh"\n}',
             "pushRegisterJson": "[]",
-            "bizType": "",
+            # Enrolling a new terminal switches the request into TERMINAL_BIND
+            # mode, which is what makes the cloud trust this feature code.
+            "msgType": "3" if sms_code else "0",
+            "bizType": "TERMINAL_BIND" if sms_code else "",
+            "smsCode": sms_code or "",
             "imageCode": "",
             "latitude": "",
             "longitude": "",
             "redirect": "",
-            "smsCode": "",
             "smsToken": "",
         }
 
@@ -158,10 +247,10 @@ class NexecurHikvisionClient:
             _LOGGER.debug("Login response meta: %s", res_json.get("meta"))
 
             meta = res_json.get("meta", {})
-            if str(meta.get("code")) != "200":
+            code = str(meta.get("code"))
+            if code != CODE_OK:
                 error_msg = meta.get("message", "Unknown error")
-                _LOGGER.error("Login failed: %s", error_msg)
-                raise NexecurAuthError(f"Login failed: {error_msg}")
+                await self._handle_login_error(code, error_msg)
 
             self._session_id = res_json["loginSession"]["sessionId"]
             self._user_info = res_json.get("loginUser", {})
@@ -708,6 +797,11 @@ class NexecurHikvisionClient:
     def token(self) -> str:
         """Return the session ID."""
         return self._session_id
+
+    @property
+    def feature_code(self) -> str:
+        """Return the terminal feature code, to be persisted by the caller."""
+        return self._feature_code
 
     @property
     def devices(self) -> List[Dict[str, Any]]:

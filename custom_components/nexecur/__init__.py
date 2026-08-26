@@ -6,6 +6,7 @@ from typing import Union
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -21,11 +22,16 @@ from .const import (
     CONF_ACCOUNT,
     CONF_COUNTRY_CODE,
     CONF_SSID,
+    CONF_FEATURE_CODE,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
 from .nexecur_api import NexecurClient, NexecurError
-from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurError as HikvisionError
+from .nexecur_api_hikvision import (
+    NexecurHikvisionClient,
+    NexecurError as HikvisionError,
+    NexecurMfaRequired,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +49,21 @@ def _get_alarm_version(entry: ConfigEntry) -> str:
     """Get the alarm version from entry data, with backward compatibility."""
     # For backward compatibility: if no alarm_version key, assume Videofied
     return entry.data.get(CONF_ALARM_VERSION, ALARM_VERSION_VIDEOFIED)
+
+
+def _persist_feature_code(
+    hass: HomeAssistant, entry: ConfigEntry, client: NexecurHikvisionClient
+) -> None:
+    """Store the terminal feature code on the entry if it isn't there yet.
+
+    Entries created before feature-code persistence get one written on their
+    next setup, so existing installs upgrade without being reconfigured.
+    """
+    if entry.data.get(CONF_FEATURE_CODE) == client.feature_code:
+        return
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_FEATURE_CODE: client.feature_code}
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -65,8 +86,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ssid=entry.data.get(CONF_SSID, ""),
             device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
             session=session,
+            feature_code=entry.data.get(CONF_FEATURE_CODE),
         )
-        await client.async_login()
+        try:
+            await client.async_login()
+        except NexecurMfaRequired as err:
+            # Persist the feature code before asking for the code: the SMS was
+            # sent for this exact one, so reauth has to reuse it.
+            _persist_feature_code(hass, entry, client)
+            raise ConfigEntryAuthFailed(str(err)) from err
+
+        _persist_feature_code(hass, entry, client)
         _LOGGER.debug(
             "Nexecur Hikvision setup: session=%s account=%s",
             "obtained" if client.token else "missing",
@@ -157,6 +187,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data["sirens"] = sirens
 
             return data
+        except NexecurMfaRequired as err:
+            # The cloud dropped this terminal's enrolment while we were running.
+            # Ask for a new code instead of retrying forever.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except (NexecurError, HikvisionError) as err:
             _LOGGER.warning("Nexecur update failed: %s", err)
             raise

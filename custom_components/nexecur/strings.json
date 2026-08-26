@@ -52,11 +52,22 @@
           "ssid": "Nom du réseau WiFi (SSID)",
           "device_name": "Nom de l'appareil"
         }
+      },
+      "reauth_confirm": {
+        "title": "Nexecur Hikvision - Autoriser ce terminal",
+        "description": "Le cloud Nexecur ne reconnaît pas encore Home Assistant comme un appareil autorisé et a envoyé un code de vérification (par SMS ou par email, selon votre méthode de connexion).\n\nSaisissez ce code pour enregistrer Home Assistant une bonne fois pour toutes. Vos entités, votre historique et vos automatisations sont conservés.",
+        "data": {
+          "sms_code": "Code de vérification"
+        }
       }
     },
     "error": {
       "auth": "Échec de l'authentification",
-      "unknown": "Erreur inconnue"
+      "unknown": "Erreur inconnue",
+      "invalid_sms_code": "Code incorrect ou expiré. Vérifiez le message reçu et réessayez."
+    },
+    "abort": {
+      "reauth_successful": "Home Assistant est maintenant autorisé sur votre compte Nexecur."
     }
   },
   "options": {
