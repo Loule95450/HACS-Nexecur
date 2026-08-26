@@ -12,7 +12,14 @@ import os
 # Add custom_components to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom_components', 'nexecur'))
 
-from nexecur_api_hikvision import NexecurHikvisionClient
+from nexecur_api_hikvision import (
+    NexecurHikvisionClient,
+    NexecurAuthError,
+    NexecurMfaRequired,
+    CODE_MFA_REQUIRED,
+    CODE_MFA_INVALID,
+    CODE_BAD_PASSWORD,
+)
 
 
 class TestHikvisionClient:
@@ -291,3 +298,110 @@ class TestArmCommands:
             
             call_args = mock_exec.call_args
             assert "away" in str(call_args)
+
+
+class TestFeatureCodeStability:
+    """The feature code is the terminal fingerprint the cloud binds to the account.
+
+    Regenerating it on every start makes each login look like an unknown
+    terminal, which the cloud rejects with 硬件特征码校验失败.
+    """
+
+    def test_feature_code_is_reused_when_supplied(self):
+        """A persisted feature code must be replayed verbatim."""
+        stored = "a" * 32
+        client = NexecurHikvisionClient(
+            phone="0612345678",
+            password="test",
+            country_code="33",
+            feature_code=stored,
+        )
+
+        assert client.feature_code == stored
+        assert client._get_headers()["featureCode"] == stored
+
+    def test_feature_code_generated_when_absent(self):
+        """A fresh install still gets a usable code."""
+        client = NexecurHikvisionClient(
+            phone="0612345678", password="test", country_code="33"
+        )
+
+        assert len(client.feature_code) == 32
+
+    def test_two_clients_sharing_a_code_are_identical(self):
+        """Restarting Home Assistant must not present a new terminal."""
+        stored = "b" * 32
+        first = NexecurHikvisionClient(
+            phone="0612345678", password="test", feature_code=stored
+        )
+        second = NexecurHikvisionClient(
+            phone="0612345678", password="test", feature_code=stored
+        )
+
+        assert first.feature_code == second.feature_code
+
+    def test_without_persistence_codes_diverge(self):
+        """Guards the regression: no stored code means a new identity."""
+        first = NexecurHikvisionClient(phone="0612345678", password="test")
+        second = NexecurHikvisionClient(phone="0612345678", password="test")
+
+        assert first.feature_code != second.feature_code
+
+
+class TestLoginErrorMapping:
+    """Login failures must be typed so the caller can react appropriately."""
+
+    @pytest.fixture
+    def client(self):
+        return NexecurHikvisionClient(
+            phone="0612345678", password="test", feature_code="c" * 32
+        )
+
+    @pytest.mark.asyncio
+    async def test_chinese_feature_code_error_requests_enrolment(self, client):
+        """The exact error seen in the wild must trigger the SMS flow."""
+        client.async_send_mfa_code = AsyncMock()
+
+        with pytest.raises(NexecurMfaRequired):
+            await client._handle_login_error("1", "硬件特征码校验失败")
+
+        client.async_send_mfa_code.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_mfa_required_code_requests_enrolment(self, client):
+        client.async_send_mfa_code = AsyncMock()
+
+        with pytest.raises(NexecurMfaRequired):
+            await client._handle_login_error(CODE_MFA_REQUIRED, "MFA required")
+
+        client.async_send_mfa_code.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_invalid_code_does_not_resend_sms(self, client):
+        """Re-sending would invalidate the code the user is typing."""
+        client.async_send_mfa_code = AsyncMock()
+
+        with pytest.raises(NexecurMfaRequired):
+            await client._handle_login_error(CODE_MFA_INVALID, "bad code")
+
+        client.async_send_mfa_code.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_bad_password_is_a_plain_auth_error(self, client):
+        """Credential failures must not be mistaken for enrolment."""
+        client.async_send_mfa_code = AsyncMock()
+
+        with pytest.raises(NexecurAuthError) as excinfo:
+            await client._handle_login_error(CODE_BAD_PASSWORD, "nope")
+
+        assert not isinstance(excinfo.value, NexecurMfaRequired)
+        assert "Incorrect password" in str(excinfo.value)
+        client.async_send_mfa_code.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_error_message_carries_the_numeric_code(self, client):
+        """The numeric code is the diagnostic we were missing in the logs."""
+        with pytest.raises(NexecurAuthError) as excinfo:
+            await client._handle_login_error("9999", "boom")
+
+        assert "9999" in str(excinfo.value)

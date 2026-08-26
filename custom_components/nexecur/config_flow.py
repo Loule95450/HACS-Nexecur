@@ -15,6 +15,8 @@ from .const import (
     CONF_ACCOUNT,
     CONF_COUNTRY_CODE,
     CONF_SSID,
+    CONF_FEATURE_CODE,
+    CONF_SMS_CODE,
     CONF_LOGIN_METHOD,
     CONF_DISARM_CODE,
     CONF_ARM_CODE,
@@ -80,6 +82,13 @@ HIKVISION_EMAIL_SCHEMA = vol.Schema(
         vol.Required(CONF_PASSWORD): str,
         vol.Optional(CONF_SSID, default=""): str,
         vol.Optional(CONF_DEVICE_NAME, default="Home Assistant"): str,
+    }
+)
+
+# Re-auth: enrol this terminal with the code received by SMS
+REAUTH_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_SMS_CODE): str,
     }
 )
 
@@ -270,6 +279,8 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._data.update(user_input)
                 # Store account for unified access
                 self._data[CONF_ACCOUNT] = user_input[CONF_PHONE]
+                # Keep the terminal fingerprint the cloud just accepted
+                self._data[CONF_FEATURE_CODE] = client.feature_code
                 await self.async_set_unique_id(f"hikvision_{user_input[CONF_PHONE]}")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
@@ -308,6 +319,8 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._data.update(user_input)
                 # Store account for unified access
                 self._data[CONF_ACCOUNT] = user_input[CONF_EMAIL]
+                # Keep the terminal fingerprint the cloud just accepted
+                self._data[CONF_FEATURE_CODE] = client.feature_code
                 await self.async_set_unique_id(f"hikvision_{user_input[CONF_EMAIL]}")
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
@@ -320,6 +333,64 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="hikvision_email",
             data_schema=HIKVISION_EMAIL_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_reauth(self, entry_data):
+        """Handle re-authentication triggered by ConfigEntryAuthFailed."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Enrol this terminal by confirming the code sent by SMS.
+
+        Updates the existing entry: the unique ID, entities and their history
+        are preserved, so nothing has to be set up again.
+        """
+        from .nexecur_api_hikvision import (
+            NexecurHikvisionClient,
+            NexecurAuthError as HikAuthError,
+            NexecurMfaRequired,
+        )
+
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        errors = {}
+
+        if user_input is not None:
+            account = (
+                entry.data.get(CONF_ACCOUNT)
+                or entry.data.get(CONF_PHONE)
+                or entry.data.get(CONF_EMAIL, "")
+            )
+            client = NexecurHikvisionClient(
+                phone=account,
+                password=entry.data[CONF_PASSWORD],
+                country_code=entry.data.get(CONF_COUNTRY_CODE, "33"),
+                ssid=entry.data.get(CONF_SSID, ""),
+                device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
+                # Enrol the very feature code the SMS was issued for.
+                feature_code=entry.data.get(CONF_FEATURE_CODE),
+            )
+            try:
+                await client.async_login(sms_code=user_input[CONF_SMS_CODE].strip())
+            except NexecurMfaRequired:
+                errors["base"] = "invalid_sms_code"
+            except HikAuthError:
+                errors["base"] = "auth"
+            except Exception:
+                errors["base"] = "unknown"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={**entry.data, CONF_FEATURE_CODE: client.feature_code},
+                )
+                await self.hass.config_entries.async_reload(entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+            finally:
+                await client.async_close()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=REAUTH_SCHEMA,
             errors=errors,
         )
 

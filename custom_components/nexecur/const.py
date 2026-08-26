@@ -45,3 +45,9 @@ CONF_EMAIL = "email"
 CONF_ACCOUNT = "account"  # Stores the actual phone or email value
 CONF_COUNTRY_CODE = "country_code"
 CONF_SSID = "ssid"
+# Stable hardware fingerprint sent to the Hikvision cloud at login.
+# Must stay identical across restarts: the cloud binds it to the account
+# as a trusted terminal, and rejects unknown ones.
+CONF_FEATURE_CODE = "feature_code"
+# One-time code texted by the cloud to enrol a new terminal
+CONF_SMS_CODE = "sms_code"
