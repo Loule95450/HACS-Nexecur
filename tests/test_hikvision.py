@@ -410,3 +410,96 @@ class TestLoginErrorMapping:
             await client._handle_login_error("9999", "boom")
 
         assert "9999" in str(excinfo.value)
+
+
+class TestSessionPersistence:
+    """A stored session is what keeps the terminal trusted.
+
+    Confirmed against the live cloud: even after a successful TERMINAL_BIND
+    enrolment (terminalBinded=1), a plain password login from the same feature
+    code is refused again with 6002. Only the session carries the trust, so it
+    must be refreshed rather than re-created.
+    """
+
+    def _client(self, **kwargs):
+        return NexecurHikvisionClient(
+            phone="0612345678", password="test", feature_code="d" * 32, **kwargs
+        )
+
+    def test_stored_session_is_adopted(self):
+        client = self._client(session_id="sess", rf_session_id="refresh")
+
+        assert client.token == "sess"
+        assert client.rf_session_id == "refresh"
+        assert client._get_headers()["sessionId"] == "sess"
+
+    def test_stored_domain_is_adopted(self):
+        client = self._client(api_domain="apiieu.guardingvision.com")
+
+        assert client.api_domain == "apiieu.guardingvision.com"
+        assert client._base_url == "https://apiieu.guardingvision.com"
+
+    def test_user_info_survives_a_restart(self):
+        """Needed for ISAPI: a refresh response carries no loginUser."""
+        client = self._client(user_info={"username": "bob", "areaId": 115})
+
+        assert client.user_info["username"] == "bob"
+        assert client._get_headers()["areaId"] == "115"
+
+    @pytest.mark.asyncio
+    async def test_refresh_is_preferred_over_login(self):
+        client = self._client(session_id="sess", rf_session_id="refresh")
+        client._async_refresh_session = AsyncMock(return_value=True)
+        client._fetch_devices = AsyncMock()
+        client.async_login = AsyncMock()
+
+        await client.async_ensure_session()
+
+        client._async_refresh_session.assert_awaited_once()
+        client.async_login.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_refresh_attempted_even_without_session_id(self):
+        """Callers clear the session id on a 401; the refresh must still run."""
+        client = self._client(session_id="", rf_session_id="refresh")
+        client._async_refresh_session = AsyncMock(return_value=True)
+        client._fetch_devices = AsyncMock()
+        client.async_login = AsyncMock()
+
+        await client.async_ensure_session()
+
+        client._async_refresh_session.assert_awaited_once()
+        client.async_login.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dead_refresh_token_falls_back_to_login(self):
+        client = self._client(session_id="sess", rf_session_id="stale")
+        client._async_refresh_session = AsyncMock(return_value=False)
+        client.async_login = AsyncMock()
+
+        await client.async_ensure_session()
+
+        client.async_login.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_dead_session_is_not_replayed(self):
+        """A refused session must be dropped, not sent again on the next call."""
+        client = self._client(session_id="sess", rf_session_id="stale")
+        client._async_refresh_session = AsyncMock(return_value=False)
+        client.async_login = AsyncMock()
+
+        await client.async_ensure_session()
+
+        assert client.token == ""
+        assert client.rf_session_id == ""
+
+    @pytest.mark.asyncio
+    async def test_no_stored_session_goes_straight_to_login(self):
+        client = self._client()
+        client._async_refresh_session = AsyncMock()
+        client.async_login = AsyncMock()
+
+        await client.async_ensure_session()
+
+        client._async_refresh_session.assert_not_awaited()
+        client.async_login.assert_awaited_once()
