@@ -183,6 +183,9 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
 
 
 class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    # One-shot guard: only request an enrolment code once per reauth flow.
+    _enrolment_code_sent = False
+
     VERSION = 2
 
     def __init__(self):
@@ -338,6 +341,7 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(self, entry_data):
         """Handle re-authentication triggered by ConfigEntryAuthFailed."""
+        self._enrolment_code_sent = False
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input=None):
@@ -354,39 +358,50 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         errors = {}
+        account = (
+            entry.data.get(CONF_ACCOUNT)
+            or entry.data.get(CONF_PHONE)
+            or entry.data.get(CONF_EMAIL, "")
+        )
+        client = NexecurHikvisionClient(
+            phone=account,
+            password=entry.data[CONF_PASSWORD],
+            country_code=entry.data.get(CONF_COUNTRY_CODE, "33"),
+            ssid=entry.data.get(CONF_SSID, ""),
+            device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
+            # Enrol the very feature code the code was issued for.
+            feature_code=entry.data.get(CONF_FEATURE_CODE),
+        )
 
-        if user_input is not None:
-            account = (
-                entry.data.get(CONF_ACCOUNT)
-                or entry.data.get(CONF_PHONE)
-                or entry.data.get(CONF_EMAIL, "")
-            )
-            client = NexecurHikvisionClient(
-                phone=account,
-                password=entry.data[CONF_PASSWORD],
-                country_code=entry.data.get(CONF_COUNTRY_CODE, "33"),
-                ssid=entry.data.get(CONF_SSID, ""),
-                device_name=entry.data.get(CONF_DEVICE_NAME, "Home Assistant"),
-                # Enrol the very feature code the SMS was issued for.
-                feature_code=entry.data.get(CONF_FEATURE_CODE),
-            )
-            try:
-                await client.async_login(sms_code=user_input[CONF_SMS_CODE].strip())
-            except NexecurMfaRequired:
-                errors["base"] = "invalid_sms_code"
-            except HikAuthError:
-                errors["base"] = "auth"
-            except Exception:
-                errors["base"] = "unknown"
+        try:
+            if user_input is None:
+                # First time the form is shown: request exactly one code, so the
+                # one the user is about to read stays the valid one.
+                if not self._enrolment_code_sent:
+                    try:
+                        await client.async_send_mfa_code()
+                    except HikAuthError:
+                        errors["base"] = "code_request_failed"
+                    else:
+                        self._enrolment_code_sent = True
             else:
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={**entry.data, CONF_FEATURE_CODE: client.feature_code},
-                )
-                await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
-            finally:
-                await client.async_close()
+                try:
+                    await client.async_login(sms_code=user_input[CONF_SMS_CODE].strip())
+                except NexecurMfaRequired:
+                    errors["base"] = "invalid_sms_code"
+                except HikAuthError:
+                    errors["base"] = "auth"
+                except Exception:
+                    errors["base"] = "unknown"
+                else:
+                    self.hass.config_entries.async_update_entry(
+                        entry,
+                        data={**entry.data, CONF_FEATURE_CODE: client.feature_code},
+                    )
+                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
+        finally:
+            await client.async_close()
 
         return self.async_show_form(
             step_id="reauth_confirm",

@@ -170,15 +170,17 @@ class NexecurHikvisionClient:
         )
 
         if needs_enrolment:
+            # Deliberately do NOT request a code here. Home Assistant retries
+            # setup on a backoff, and each retry would send a fresh code that
+            # invalidates the previous one, so the user could never type a
+            # valid one. The code is requested by the reauth flow instead,
+            # once, when the form is actually shown.
             _LOGGER.warning(
                 "This Home Assistant terminal is not enrolled on the account "
-                "(code %s: %s). Requesting a verification code.",
+                "(code %s: %s). Enrol it from the integration's reauth dialog.",
                 code,
                 error_msg,
             )
-            if code != CODE_MFA_INVALID:
-                # Don't re-send on a wrong code: the previous one is still valid.
-                await self.async_send_mfa_code()
             raise NexecurMfaRequired(
                 f"Terminal enrolment required [{code}]: {error_msg}"
             )

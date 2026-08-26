@@ -64,7 +64,8 @@
     "error": {
       "auth": "Échec de l'authentification",
       "unknown": "Erreur inconnue",
-      "invalid_sms_code": "Code incorrect ou expiré. Vérifiez le message reçu et réessayez."
+      "invalid_sms_code": "Code incorrect ou expiré. Vérifiez le message reçu et réessayez.",
+      "code_request_failed": "Impossible de demander un code de vérification au cloud. Réessayez dans quelques minutes."
     },
     "abort": {
       "reauth_successful": "Home Assistant est maintenant autorisé sur votre compte Nexecur."
