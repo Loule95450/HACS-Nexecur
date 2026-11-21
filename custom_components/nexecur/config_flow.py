@@ -270,7 +270,12 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 3a: Configure Hikvision with phone number."""
         errors = {}
         if user_input is not None:
-            from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurAuthError as HikAuthError
+            from .nexecur_api_hikvision import (
+                NexecurHikvisionClient,
+                NexecurAccountLockedError as HikLockedError,
+                NexecurAuthError as HikAuthError,
+                NexecurUnknownAccountError as HikUnknownAccountError,
+            )
 
             client = NexecurHikvisionClient(
                 phone=user_input[CONF_PHONE],
@@ -281,6 +286,12 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_login()
+            except HikUnknownAccountError:
+                # The two clouds hold different accounts: this is nearly always
+                # a Videofied user who picked the Hikvision version.
+                errors["base"] = "unknown_account"
+            except HikLockedError:
+                errors["base"] = "account_locked"
             except HikAuthError:
                 errors["base"] = "auth"
             except Exception:
@@ -313,7 +324,12 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 3b: Configure Hikvision with email."""
         errors = {}
         if user_input is not None:
-            from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurAuthError as HikAuthError
+            from .nexecur_api_hikvision import (
+                NexecurHikvisionClient,
+                NexecurAccountLockedError as HikLockedError,
+                NexecurAuthError as HikAuthError,
+                NexecurUnknownAccountError as HikUnknownAccountError,
+            )
 
             client = NexecurHikvisionClient(
                 phone=user_input[CONF_EMAIL],  # API uses same param
@@ -324,6 +340,12 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_login()
+            except HikUnknownAccountError:
+                # The two clouds hold different accounts: this is nearly always
+                # a Videofied user who picked the Hikvision version.
+                errors["base"] = "unknown_account"
+            except HikLockedError:
+                errors["base"] = "account_locked"
             except HikAuthError:
                 errors["base"] = "auth"
             except Exception:

@@ -66,6 +66,7 @@
       "unknown": "Erreur inconnue",
       "invalid_sms_code": "Code incorrect ou expiré. Vérifiez le message reçu et réessayez.",
       "code_request_failed": "Impossible de demander un code de vérification au cloud. Réessayez dans quelques minutes.",
+      "unknown_account": "Ce compte est inconnu du cloud Hikvision. Si vous utilisez l'application « Mon Nexecur », revenez en arrière et choisissez la version Videofied.",
       "account_locked": "Le compte Nexecur est temporairement verrouillé. Patientez avant de réessayer.",
       "service_unavailable": "Le service Nexecur ou la centrale est indisponible. Réessayez plus tard."
     },

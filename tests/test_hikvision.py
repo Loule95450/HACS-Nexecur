@@ -14,11 +14,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'custom_compone
 
 from nexecur_api_hikvision import (
     NexecurHikvisionClient,
+    NexecurAccountLockedError,
     NexecurAuthError,
     NexecurMfaRequired,
+    NexecurUnknownAccountError,
     CODE_MFA_REQUIRED,
     CODE_MFA_INVALID,
+    CODE_BAD_ACCOUNT,
     CODE_BAD_PASSWORD,
+    CODE_USER_LOCKED,
 )
 
 
@@ -402,6 +406,37 @@ class TestLoginErrorMapping:
         assert not isinstance(excinfo.value, NexecurMfaRequired)
         assert "Incorrect password" in str(excinfo.value)
         client.async_send_mfa_code.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unknown_account_is_told_apart_from_a_bad_password(self, client):
+        """An account the cloud ignores means the wrong alarm version.
+
+        Reported as a bare "Authentication failed", which sent users looking
+        for a typo in credentials that were perfectly valid — on the other
+        cloud. See issue #14.
+        """
+        with pytest.raises(NexecurUnknownAccountError) as excinfo:
+            await client._handle_login_error(CODE_BAD_ACCOUNT, "unknown account")
+
+        assert isinstance(excinfo.value, NexecurAuthError)
+        assert not isinstance(excinfo.value, NexecurMfaRequired)
+
+    @pytest.mark.asyncio
+    async def test_locked_account_is_told_apart_from_a_bad_password(self, client):
+        """Retrying a locked account only extends the lock."""
+        with pytest.raises(NexecurAccountLockedError) as excinfo:
+            await client._handle_login_error(CODE_USER_LOCKED, "locked")
+
+        assert isinstance(excinfo.value, NexecurAuthError)
+
+    @pytest.mark.asyncio
+    async def test_bad_password_stays_a_plain_auth_error(self, client):
+        """The typed errors must not swallow the ordinary credential failure."""
+        with pytest.raises(NexecurAuthError) as excinfo:
+            await client._handle_login_error(CODE_BAD_PASSWORD, "nope")
+
+        assert not isinstance(excinfo.value, NexecurUnknownAccountError)
+        assert not isinstance(excinfo.value, NexecurAccountLockedError)
 
     @pytest.mark.asyncio
     async def test_error_message_carries_the_numeric_code(self, client):

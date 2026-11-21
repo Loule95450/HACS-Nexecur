@@ -81,10 +81,15 @@ Ce bouton ouvre le dépôt dans HACS sur **votre** instance. Cliquez ensuite sur
 
 Lors de l'ajout de l'intégration, sélectionnez votre version d'alarme :
 
-| Version | Description |
-|---------|-------------|
-| **Videofied** | Ancienne version Nexecur |
-| **Hikvision** | Nouvelle version (AX PRO, GuardingVision) |
+| Version | Description | Identifiants |
+|---------|-------------|--------------|
+| **Videofied** | Ancienne version Nexecur | ID site + PIN de l'application **Mon Nexecur** |
+| **Hikvision** | Nouvelle version (AX PRO, GuardingVision) | Téléphone ou email + mot de passe du **compte Cloud** |
+
+> **Les deux versions ne partagent aucun compte.** Ce sont deux services
+> différents. Des identifiants parfaitement valides sur l'un sont *inconnus* sur
+> l'autre : si la connexion échoue avec « Ce compte est inconnu », vous avez
+> choisi la mauvaise version.
 
 ---
 
@@ -232,6 +237,17 @@ automation:
 - **Hikvision** : Vérifiez le numéro/email et le mot de passe Cloud
 - Assurez-vous d'utiliser les mêmes identifiants que l'application mobile Nexecur
 
+### « Ce compte est inconnu du cloud Hikvision »
+
+Le cloud ne connaît pas ce compte — ce n'est pas un problème de mot de passe.
+Dans la quasi-totalité des cas, c'est la **mauvaise version** qui a été choisie :
+si votre application est **Mon Nexecur**, revenez à l'étape 1 et sélectionnez
+**Videofied**.
+
+Avant la version 5.0.1, ce cas s'affichait comme un simple « Échec de
+l'authentification », ce qui envoyait chercher une faute de frappe dans des
+identifiants corrects.
+
 ### L'alarme s'arme mais affiche "désarmé"
 
 Mettez à jour l'intégration : depuis la version 5.0.0, tous les statuts
@@ -293,6 +309,19 @@ l'option **« Inverser le statut »** dans les options de l'intégration.
 ---
 
 ## Changelog
+
+### Version 5.0.1
+
+- Les détecteurs, claviers et sirènes que la centrale ne remonte plus peuvent
+  être **supprimés** depuis Home Assistant. Jusqu'ici un détecteur remplacé
+  restait indéfiniment dans la liste, toutes ses entités indisponibles, et
+  Home Assistant refusait de le supprimer (Hikvision uniquement).
+  Merci à @sleberrigaud.
+- Un compte inconnu du cloud Hikvision (code 1013) et un compte verrouillé
+  (code 1015) sont enfin **distingués d'un mot de passe refusé**. Le premier cas
+  signale presque toujours une erreur de version à l'étape 1.
+- Les clés de traduction utilisées par le formulaire de configuration sont
+  vérifiées par les tests : une clé manquante affichait son nom brut.
 
 ### Version 5.0.0
 
