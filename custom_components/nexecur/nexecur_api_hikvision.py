@@ -33,6 +33,19 @@ class NexecurMfaRequired(NexecurAuthError):
     """
 
 
+class NexecurUnknownAccountError(NexecurAuthError):
+    """The cloud has never heard of this account.
+
+    Almost always a Videofied user who picked the Hikvision version: the two
+    clouds hold different accounts, so valid Mon Nexecur credentials are
+    simply unknown here.
+    """
+
+
+class NexecurAccountLockedError(NexecurAuthError):
+    """The cloud locked the account after too many failed attempts."""
+
+
 # Meta codes returned by the Hikvision cloud on /v3/users/login
 CODE_OK = "200"
 CODE_MFA_INVALID = "1012"
@@ -46,6 +59,13 @@ AUTH_ERROR_MESSAGES = {
     CODE_BAD_ACCOUNT: "Unknown account",
     CODE_BAD_PASSWORD: "Incorrect password",
     CODE_USER_LOCKED: "Account locked by the cloud",
+}
+
+# Codes the caller can act on differently: a missing account means the wrong
+# alarm version was chosen, a lock means waiting is the only option.
+AUTH_ERROR_EXCEPTIONS = {
+    CODE_BAD_ACCOUNT: NexecurUnknownAccountError,
+    CODE_USER_LOCKED: NexecurAccountLockedError,
 }
 
 
@@ -195,7 +215,9 @@ class NexecurHikvisionClient:
 
         reason = AUTH_ERROR_MESSAGES.get(code, error_msg)
         _LOGGER.error("Login failed [%s]: %s", code, reason)
-        raise NexecurAuthError(f"Login failed [{code}]: {reason}")
+        raise AUTH_ERROR_EXCEPTIONS.get(code, NexecurAuthError)(
+            f"Login failed [{code}]: {reason}"
+        )
 
     async def _async_refresh_session(self) -> bool:
         """Renew the session from the refresh token.
