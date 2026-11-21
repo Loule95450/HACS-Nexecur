@@ -7,6 +7,7 @@ from typing import Union
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -31,6 +32,7 @@ from .const import (
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
+from .device_removal import is_stale_sub_device
 from .nexecur_api import NexecurClient, NexecurError
 from .nexecur_api_hikvision import (
     NexecurHikvisionClient,
@@ -278,6 +280,30 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow deleting a sub-device the alarm no longer reports.
+
+    When a detector is replaced or removed from the alarm, its device stays in
+    Home Assistant with every entity unavailable. This enables the "Delete"
+    button for such devices only; the panel, cameras and sub-devices that are
+    still reported cannot be deleted.
+    """
+    stored = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if not stored or stored.get("alarm_version") != ALARM_VERSION_HIKVISION:
+        return False
+
+    # Same main device identifier as the sensor and binary_sensor platforms.
+    account = entry.data.get(CONF_ACCOUNT) or entry.data.get(CONF_PHONE, "unknown")
+    return is_stale_sub_device(
+        device_entry.identifiers,
+        DOMAIN,
+        f"hikvision_{account}",
+        stored["coordinator"].data,
+    )
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
