@@ -27,7 +27,15 @@ from .const import (
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
-from .alarm_mapping import resolve_videofied_arm_mode
+from .alarm_mapping import (
+    PANEL_CAMERA_DETECTION,
+    PANEL_CONNECTED,
+    PANEL_DISCONNECTED,
+    PANEL_TRIGGERED_RESTORED,
+    hikvision_panel_state,
+    resolve_videofied_arm_status,
+    videofied_panel_state,
+)
 from .nexecur_api import NexecurClient, NexecurError
 from .nexecur_api_hikvision import NexecurHikvisionClient, NexecurError as HikvisionError
 
@@ -85,56 +93,59 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
     def supported_features(self) -> AlarmControlPanelEntityFeature:
         """Return the list of supported features based on panel SP availability."""
         data = self.coordinator.data
-        if not data:
-            return AlarmControlPanelEntityFeature.ARM_AWAY
-
-        panel_sp1_available = data.get("panel_sp1_available", True)
-        panel_sp2_available = data.get("panel_sp2_available", False)
 
         # Hikvision panels typically support both modes
         if self._alarm_version == ALARM_VERSION_HIKVISION:
             return AlarmControlPanelEntityFeature.ARM_HOME | AlarmControlPanelEntityFeature.ARM_AWAY
 
-        # Videofied logic
-        if not panel_sp1_available:
-            return AlarmControlPanelEntityFeature(0)
+        # Videofied: full arming is always available, the two partial modes
+        # only when the site exposes them.
+        features = AlarmControlPanelEntityFeature.ARM_AWAY
+        if not data:
+            return features
+        if data.get("panel_sp1_available", True):
+            features |= AlarmControlPanelEntityFeature.ARM_HOME
+        if data.get("panel_sp2_available", False):
+            features |= AlarmControlPanelEntityFeature.ARM_NIGHT
+        return features
 
-        if panel_sp2_available:
-            return AlarmControlPanelEntityFeature.ARM_HOME | AlarmControlPanelEntityFeature.ARM_AWAY
-        else:
-            return AlarmControlPanelEntityFeature.ARM_AWAY
-
-    @property
-    def state(self) -> str | None:
+    def _panel_status(self) -> int | None:
+        """Current panel status as an int, or None when it is not known."""
         data = self.coordinator.data
         if not data:
             return None
-        status = int(data.get("panel_status", 0))
-        panel_sp1_available = data.get("panel_sp1_available", True)
-        panel_sp2_available = data.get("panel_sp2_available", False)
+        raw = data.get("panel_status")
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
 
-        # Handle inverted status for some Videofied installations
-        if self._invert_status and self._alarm_version == ALARM_VERSION_VIDEOFIED:
-            # Swap status 1 and 2
-            if status == 1:
-                status = 2
-            elif status == 2:
-                status = 1
+    @property
+    def alarm_state(self) -> AlarmControlPanelState | None:
+        """Return the current state, or None when the panel does not say.
 
-        if status == 0:
-            return AlarmControlPanelState.DISARMED
-        elif status == 1:
-            # Status 1 = sp1 active / stay mode
-            if self._alarm_version == ALARM_VERSION_HIKVISION:
-                return AlarmControlPanelState.ARMED_HOME
-            if not panel_sp1_available:
-                return AlarmControlPanelState.DISARMED
-            return AlarmControlPanelState.ARMED_HOME if panel_sp2_available else AlarmControlPanelState.ARMED_AWAY
-        elif status == 2:
-            # Status 2 = sp2 active / away mode
-            return AlarmControlPanelState.ARMED_AWAY
+        An unknown status is never reported as disarmed: statuses such as a
+        disconnected panel or a camera detection carry no arming information,
+        and showing "disarmed" for them would hide a live intrusion.
+        """
+        status = self._panel_status()
+        if status is None:
+            return None
+
+        if self._alarm_version == ALARM_VERSION_HIKVISION:
+            state = hikvision_panel_state(status)
         else:
-            return AlarmControlPanelState.DISARMED
+            state = videofied_panel_state(status, self._invert_status)
+        return AlarmControlPanelState(state) if state else None
+
+    @property
+    def available(self) -> bool:
+        """A panel the cloud reports as disconnected is not controllable."""
+        if not super().available or not self.coordinator.data:
+            return False
+        if self._alarm_version == ALARM_VERSION_VIDEOFIED:
+            return self._panel_status() != PANEL_DISCONNECTED
+        return True
 
     @property
     def code_format(self) -> str | None:
@@ -173,12 +184,27 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
         # Whitelist only: coordinator.data holds raw API responses which may
         # contain credentials or other sensitive payloads
         data = self.coordinator.data or {}
-        return {
+        attributes: dict[str, Any] = {
             "alarm_version": self._alarm_version,
             "panel_status": data.get("panel_status"),
             "panel_sp1_available": data.get("panel_sp1_available"),
             "panel_sp2_available": data.get("panel_sp2_available"),
         }
+        if self._alarm_version == ALARM_VERSION_VIDEOFIED:
+            # Names the user gave the partial modes in the Mon Nexecur app.
+            attributes["partial_1_name"] = data.get("panel_sp1_nom") or "Partiel 1"
+            attributes["partial_2_name"] = data.get("panel_sp2_nom") or "Partiel 2"
+            # Statuses that report an event rather than an arming state.
+            events = {
+                PANEL_CONNECTED: "panel_connected",
+                PANEL_CAMERA_DETECTION: "camera_detection",
+                PANEL_TRIGGERED_RESTORED: "intrusion_restored",
+                PANEL_DISCONNECTED: "panel_disconnected",
+            }
+            event = events.get(self._panel_status())
+            if event:
+                attributes["nexecur_event"] = event
+        return attributes
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         # Validate disarm code if configured and not empty
@@ -193,60 +219,38 @@ class NexecurAlarmEntity(CoordinatorEntity, AlarmControlPanelEntity):
             _LOGGER.error("Failed to disarm: %s", err)
             raise HomeAssistantError(f"Failed to disarm: {err}") from err
 
-    async def async_alarm_arm_away(self, code: str | None = None) -> None:
-        # Validate arm code if configured
-        if self._arm_code:
-            if code != self._arm_code:
-                raise ServiceValidationError("Invalid arm code")
-        
+    async def _async_arm(self, mode: str, code: str | None) -> None:
+        """Arm in one of the three modes: away (full), home (SP1), night (SP2)."""
+        if self._arm_code and code != self._arm_code:
+            raise ServiceValidationError("Invalid arm code")
+
         try:
             if self._alarm_version == ALARM_VERSION_HIKVISION:
-                await self._client.async_set_armed_away()
-            else:
-                data = self.coordinator.data
-                panel_sp1_available = data.get("panel_sp1_available", True) if data else True
-                panel_sp2_available = data.get("panel_sp2_available", False) if data else False
-
-                if not panel_sp1_available:
-                    _LOGGER.error("Cannot arm: SP1 not available")
-                    return
-
-                arm_mode = resolve_videofied_arm_mode("away", panel_sp2_available, self._invert_status)
-                if arm_mode == "away":
+                # The cloud panel only exposes two modes.
+                if mode == "away":
                     await self._client.async_set_armed_away()
                 else:
                     await self._client.async_set_armed_home()
+            else:
+                data = self.coordinator.data or {}
+                status = resolve_videofied_arm_status(
+                    mode,
+                    data.get("panel_sp1_available", True),
+                    data.get("panel_sp2_available", False),
+                    self._invert_status,
+                )
+                await self._client.async_set_panel_status(status)
 
             await self.coordinator.async_request_refresh()
         except (NexecurError, HikvisionError) as err:
-            _LOGGER.error("Failed to arm away: %s", err)
-            raise HomeAssistantError(f"Failed to arm away: {err}") from err
+            _LOGGER.error("Failed to arm %s: %s", mode, err)
+            raise HomeAssistantError(f"Failed to arm {mode}: {err}") from err
+
+    async def async_alarm_arm_away(self, code: str | None = None) -> None:
+        await self._async_arm("away", code)
 
     async def async_alarm_arm_home(self, code: str | None = None) -> None:
-        # Validate arm code if configured
-        if self._arm_code:
-            if code != self._arm_code:
-                raise ServiceValidationError("Invalid arm code")
-        
-        try:
-            if self._alarm_version == ALARM_VERSION_HIKVISION:
-                await self._client.async_set_armed_home()
-            else:
-                data = self.coordinator.data
-                panel_sp1_available = data.get("panel_sp1_available", True) if data else True
-                panel_sp2_available = data.get("panel_sp2_available", False) if data else False
+        await self._async_arm("home", code)
 
-                if not panel_sp1_available:
-                    _LOGGER.error("Cannot arm home: SP1 not available")
-                    return
-
-                arm_mode = resolve_videofied_arm_mode("home", panel_sp2_available, self._invert_status)
-                if arm_mode == "away":
-                    await self._client.async_set_armed_away()
-                else:
-                    await self._client.async_set_armed_home()
-
-            await self.coordinator.async_request_refresh()
-        except (NexecurError, HikvisionError) as err:
-            _LOGGER.error("Failed to arm home: %s", err)
-            raise HomeAssistantError(f"Failed to arm home: {err}") from err
+    async def async_alarm_arm_night(self, code: str | None = None) -> None:
+        await self._async_arm("night", code)

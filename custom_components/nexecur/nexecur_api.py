@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from aiohttp import ClientSession
+from aiohttp import ClientError, ClientSession
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,12 +21,48 @@ PANEL_CHECK_STATUS_URI = "/webservices/check-panel-status"
 STREAM_URI = "/webservices/stream"
 
 MAX_WAIT_SECONDS = 60
+REQUEST_TIMEOUT = 30
+
+# Service statuses meaning the session is gone, and the one meaning the account
+# is locked out. Anything else unknown is treated as a temporary unavailability:
+# the API is private and an unlisted code is no proof that the PIN is wrong.
+SESSION_ERROR_STATUSES = {2, 3, 4}
+ACCOUNT_LOCKED_STATUS = 7
+
+# Error codes returned when the panel refuses a command.
+ACTION_ERRORS = {
+    101: "another action is already running",
+    102: "unknown alarm panel",
+    103: "the alarm panel is disconnected",
+    104: "invalid code",
+    105: "the alarm panel rejected the request",
+    106: "internal alarm panel error",
+}
 
 class NexecurError(Exception):
     pass
 
 class NexecurAuthError(NexecurError):
     pass
+
+class NexecurUnavailableError(NexecurError):
+    """The service or the panel is temporarily unavailable."""
+
+class NexecurAccountLockedError(NexecurUnavailableError):
+    """Authentication is temporarily blocked; the PIN is not necessarily wrong."""
+
+class NexecurCommandError(NexecurError):
+    """An alarm command was rejected or could not be confirmed."""
+
+class NexecurConnectionError(NexecurUnavailableError):
+    """The service could not be reached or returned something unusable."""
+
+class NexecurHTTPError(NexecurConnectionError):
+    """A request returned a non-success HTTP status."""
+
+    def __init__(self, path: str, status: int) -> None:
+        self.status = status
+        super().__init__(f"HTTP {status} from {path}")
 
 @dataclass
 class NexecurState:
@@ -44,6 +80,9 @@ class NexecurClient:
         self._token: str = ""
         self._id_device: str = ""
         self._session: Optional[ClientSession] = session
+        # One alarm order at a time: two concurrent services must never race
+        # on the same panel.
+        self._command_lock = asyncio.Lock()
 
     async def _session_ensure(self) -> ClientSession:
         if self._session is None or self._session.closed:
@@ -95,18 +134,16 @@ class NexecurClient:
         )
 
     async def async_set_armed(self, armed: bool) -> None:
-        await self._ensure_token_valid()
-        await self._panel_status(1 if armed else 0)
+        """Disarm, or arm the whole site."""
+        await self.async_set_panel_status(1 if armed else 0)
 
-    async def async_set_armed_home(self) -> None:
-        """Set alarm to home mode (partial arming) using sp1."""
-        await self._ensure_token_valid()
-        await self._panel_status(1)  # sp1 = status 1
-
-    async def async_set_armed_away(self) -> None:
-        """Set alarm to away mode (full arming) using sp2."""
-        await self._ensure_token_valid()
-        await self._panel_status(2)  # sp2 = status 2
+    async def async_set_panel_status(self, status: int) -> None:
+        """Send one alarm order: 0 disarmed, 1 full, 2 partial 1, 3 partial 2."""
+        if status not in (0, 1, 2, 3):
+            raise ValueError(f"Unsupported panel status: {status}")
+        async with self._command_lock:
+            await self._ensure_token_valid()
+            await self._panel_status(status)
 
     # --- Low level HTTP helpers ---
     async def _post_json(self, path: str, json: Optional[Dict[str, Any]] = None, token: Optional[str] = None) -> Dict[str, Any]:
@@ -115,30 +152,40 @@ class NexecurClient:
         if token:
             headers["X-Auth-Token"] = token
         url = BASE_URL + path
-        _LOGGER.debug("Making request to %s with headers: %s", url, {k: v for k, v in headers.items() if k != "X-Auth-Token"})
-        async with session.post(url, json=json or {}, headers=headers) as resp:
-            resp.raise_for_status()
-            data = await resp.json(content_type=None)
-            if isinstance(data, dict) and data.get("status") not in (None, 0):
-                # API uses status==0 on success
-                _LOGGER.debug("API error on %s: %s", path, data)
-            return data if isinstance(data, dict) else {}
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with session.post(url, json=json or {}, headers=headers) as resp:
+                    if resp.status < 200 or resp.status >= 300:
+                        # Error pages can echo the PIN or the token: never keep the body.
+                        resp.release()
+                        raise NexecurHTTPError(path, resp.status)
+                    data = await resp.json(content_type=None)
+        except TimeoutError as err:
+            raise NexecurConnectionError(f"Timeout while calling {path}") from err
+        except ClientError as err:
+            raise NexecurConnectionError(f"Connection failed while calling {path}") from err
+        except ValueError as err:
+            raise NexecurConnectionError(f"Invalid response from {path}") from err
+        # Only the service name and its numeric status: free-form server text
+        # and response bodies may carry credentials.
+        _LOGGER.debug("Nexecur %s: service status %s", path, data.get("status") if isinstance(data, dict) else "not-a-dict")
+        return data if isinstance(data, dict) else {}
 
     async def _get_salt(self) -> str:
+        # The salt is what the PIN is hashed with: this request must never carry
+        # the PIN or the password in clear.
         payload = {
             "id_site": self._id_site,
-            "password": self._password_plain,
             "id_device": self._id_device,
             "partage": "1",
-            # TS client passes userConfig.pin; we reuse password to match README (single PIN)
-            "pin": self._password_plain,
         }
         data = await self._post_json(SALT_URI, json=payload)
         if data.get("message") != "OK" or data.get("status") != 0:
-            raise NexecurAuthError("Error while generating salt")
+            # No credential was sent, so a failure here proves nothing about the PIN.
+            raise NexecurUnavailableError("Unable to retrieve the authentication salt")
         salt = data.get("salt")
         if not salt:
-            raise NexecurAuthError("No salt in response")
+            raise NexecurConnectionError("No salt in response")
         return salt
 
     def _compute_hashes(self, password: str, salt_b64: str) -> tuple[str, str]:
@@ -159,6 +206,23 @@ class NexecurClient:
             "pin": pin_hash,
         }
         data = await self._post_json(SITE_URI, json=payload, token=self._token or None)
+        status = data.get("status")
+        if status in SESSION_ERROR_STATUSES and self._token:
+            # A stale token, not a bad PIN: drop it and authenticate from scratch once.
+            self._token = ""
+            data = await self._post_json(SITE_URI, json=payload)
+            status = data.get("status")
+        if status == ACCOUNT_LOCKED_STATUS:
+            raise NexecurAccountLockedError(
+                "The NEXECUR account is temporarily locked (site status 7)"
+            )
+        if status in SESSION_ERROR_STATUSES:
+            raise NexecurAuthError(
+                f"The connection code or PIN was rejected (site status {status})"
+            )
+        if status not in (0, 10):
+            # Unlisted code: report an unavailability rather than claim a wrong PIN.
+            raise NexecurUnavailableError(f"NEXECUR is unavailable (site status {status})")
         # Update token if provided
         token = data.get("token")
         if token:
@@ -188,9 +252,26 @@ class NexecurClient:
 
     async def _panel_status(self, order_status: int) -> None:
         body = {"status": order_status}
-        data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
-        if data.get("message") != "OK" or data.get("status") != 0:
-            raise NexecurError("Error while sending panel status")
+        try:
+            data = await self._post_json(PANEL_STATUS_URI, json=body, token=self._token or None)
+        except NexecurConnectionError as err:
+            # The service answers HTTP 500 or drops the connection even after
+            # having accepted an order. Resending it could arm or disarm the
+            # site twice, so wait for the queue to clear and report instead.
+            _LOGGER.warning(
+                "Nexecur did not confirm an alarm order; it will NOT be resent: %s", err
+            )
+            try:
+                await self._wait_panel_done()
+            except NexecurError:
+                pass
+            raise NexecurCommandError(
+                "The order was sent but the panel did not confirm it"
+            ) from err
+        status = data.get("status")
+        if data.get("message") != "OK" or status != 0:
+            message = ACTION_ERRORS.get(status, "the alarm order was rejected")
+            raise NexecurCommandError(f"{message} (service status {status})")
         # If pending, poll until done or timeout
         if int(data.get("pending", 0)) != 0:
             await self._wait_panel_done()
@@ -201,7 +282,7 @@ class NexecurClient:
             if int(data.get("still_pending", 0)) == 0:
                 return
             await asyncio.sleep(2)
-        raise NexecurError("Operation still pending after timeout")
+        raise NexecurCommandError("The alarm panel did not finish the order in time")
 
     async def _ensure_token_valid(self) -> None:
         if not self._token:

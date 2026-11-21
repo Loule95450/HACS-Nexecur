@@ -1,16 +1,16 @@
 {
   "domain": "nexecur",
   "name": "Nexecur",
-  "version": "4.2.0",
-  "documentation": "https://github.com/Loule95450/HACS-Nexecur",
-  "issue_tracker": "https://github.com/Loule95450/HACS-Nexecur/issues",
-  "requirements": [],
   "codeowners": [
     "@Loule95450"
   ],
-  "iot_class": "cloud_polling",
   "config_flow": true,
+  "documentation": "https://github.com/Loule95450/HACS-Nexecur",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Loule95450/HACS-Nexecur/issues",
   "loggers": [
     "custom_components.nexecur"
-  ]
+  ],
+  "requirements": [],
+  "version": "5.0.0"
 }
