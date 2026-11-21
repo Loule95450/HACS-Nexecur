@@ -65,7 +65,9 @@
       "auth": "Authentication failed",
       "unknown": "Unknown error",
       "invalid_sms_code": "Incorrect or expired code. Check the message you received and try again.",
-      "code_request_failed": "Could not request a verification code from the cloud. Try again in a few minutes."
+      "code_request_failed": "Could not request a verification code from the cloud. Try again in a few minutes.",
+      "account_locked": "The Nexecur account is temporarily locked. Wait before trying again.",
+      "service_unavailable": "The Nexecur service or the panel is unavailable. Try again later."
     },
     "abort": {
       "reauth_successful": "Home Assistant is now authorised on your Nexecur account."
