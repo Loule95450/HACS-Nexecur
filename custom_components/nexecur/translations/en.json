@@ -19,7 +19,7 @@
           "arm_code": "Arm code (optional)",
           "invert_status": "Invert status (if SP1/SP2 inverted)"
         },
-        "data_desc": {
+        "data_description": {
           "disarm_code": "Once set, this code cannot be modified or removed without deleting the integration.",
           "arm_code": "This code can be added or modified anytime via Options.",
           "invert_status": "Check if your Home and Away statuses are inverted (SP1=Full, SP2=Night)"
@@ -65,7 +65,9 @@
       "auth": "Authentication failed",
       "unknown": "Unknown error",
       "invalid_sms_code": "Incorrect or expired code. Check the message you received and try again.",
-      "code_request_failed": "Could not request a verification code from the cloud. Try again in a few minutes."
+      "code_request_failed": "Could not request a verification code from the cloud. Try again in a few minutes.",
+      "account_locked": "The Nexecur account is temporarily locked. Wait before trying again.",
+      "service_unavailable": "The Nexecur service or the panel is unavailable. Try again later."
     },
     "abort": {
       "reauth_successful": "Home Assistant is now authorised on your Nexecur account."
@@ -75,10 +77,7 @@
     "step": {
       "init": {
         "title": "Nexecur Options",
-        "description": "Manage alarm codes",
-        "description_placeholders": {
-          "hint": "Click Submit after changing an option to see additional fields."
-        },
+        "description": "Manage alarm codes. Click Submit after changing an option to see additional fields.",
         "data": {
           "enable_disarm": "Enable disarm code",
           "enable_arm": "Enable arm code",
@@ -88,10 +87,6 @@
           "disarm_info": "Disarm code status",
           "arm_info": "Arm code status",
           "invert_status": "Invert status (if SP1/SP2 inverted)"
-        },
-        "data_options": {
-          "yes": "Yes",
-          "no": "No"
         }
       }
     }

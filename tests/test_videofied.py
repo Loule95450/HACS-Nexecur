@@ -97,37 +97,79 @@ class TestVideofiedClient:
             assert status.status == 2  # Total/Away
 
     @pytest.mark.asyncio
-    async def test_set_armed_away(self, client):
-        """Test arming away"""
+    async def test_set_armed_away_sends_full_arming(self, client):
+        """Full arming is status 1, per the documented Nexecur table"""
         client._token = "test_token"
         client._id_device = "device_123"
-        
+
         with patch.object(client, '_post_json', new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = [
                 {"message": "OK", "status": 0, "pending": 0}  # panel status
             ]
-            
-            await client.async_set_armed_away()
-            
-            # Check last call was with status=2
+
+            await client.async_set_armed(True)
+
             last_call = mock_post.call_args
-            assert last_call[1]['json']['status'] == 2
+            assert last_call[1]['json']['status'] == 1
 
     @pytest.mark.asyncio
-    async def test_set_armed_home(self, client):
-        """Test arming home"""
+    async def test_set_panel_status_partial(self, client):
+        """Partial mode 1 is status 2"""
         client._token = "test_token"
         client._id_device = "device_123"
-        
+
         with patch.object(client, '_post_json', new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = [
                 {"message": "OK", "status": 0, "pending": 0}
             ]
-            
-            await client.async_set_armed_home()
-            
+
+            await client.async_set_panel_status(2)
+
             last_call = mock_post.call_args
-            assert last_call[1]['json']['status'] == 1
+            assert last_call[1]['json']['status'] == 2
+
+    @pytest.mark.asyncio
+    async def test_unsupported_panel_status_rejected(self, client):
+        """An out-of-range order never reaches the panel"""
+        client._token = "test_token"
+        with patch.object(client, '_post_json', new_callable=AsyncMock) as mock_post:
+            with pytest.raises(ValueError):
+                await client.async_set_panel_status(9)
+            mock_post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_command_is_never_resent_after_a_server_error(self, client):
+        """A 500 can follow an accepted order: resending could arm twice"""
+        from nexecur_api import NexecurCommandError, NexecurHTTPError
+
+        client._token = "test_token"
+        client._id_device = "device_123"
+
+        with patch.object(client, '_post_json', new_callable=AsyncMock) as mock_post:
+            mock_post.side_effect = [
+                NexecurHTTPError("/webservices/panel-status", 500),
+                {"message": "OK", "status": 0, "still_pending": 0},  # check-panel-status
+            ]
+
+            with pytest.raises(NexecurCommandError):
+                await client.async_set_panel_status(1)
+
+            sent = [c for c in mock_post.call_args_list if "panel-status" in c[0][0]]
+            orders = [c for c in sent if (c[1].get('json') or {}).get('status') is not None]
+            assert len(orders) == 1
+
+    @pytest.mark.asyncio
+    async def test_salt_request_carries_no_plaintext_secret(self, client):
+        """The salt is what the PIN is hashed with: it must not carry the PIN"""
+        with patch.object(client, '_post_json', new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = {"message": "OK", "status": 0, "salt": "SaltedBase64=="}
+
+            await client._get_salt()
+
+            payload = mock_post.call_args[1]['json']
+            assert "mypin123" not in payload.values()
+            assert "password" not in payload
+            assert "pin" not in payload
 
     @pytest.mark.asyncio
     async def test_set_disarmed(self, client):

@@ -26,7 +26,12 @@ from .const import (
     LOGIN_METHOD_PHONE,
     LOGIN_METHOD_EMAIL,
 )
-from .nexecur_api import NexecurClient, NexecurAuthError
+from .nexecur_api import (
+    NexecurClient,
+    NexecurAuthError,
+    NexecurAccountLockedError,
+    NexecurUnavailableError,
+)
 
 # Step 1: Choose alarm version
 VERSION_SCHEMA = vol.Schema(
@@ -176,9 +181,6 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
-            description_placeholders={
-                "hint": "Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires."
-            }
         )
 
 
@@ -186,7 +188,7 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # One-shot guard: only request an enrolment code once per reauth flow.
     _enrolment_code_sent = False
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self):
         self._alarm_version: str = ""
@@ -222,8 +224,13 @@ class NexecurConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_login()
+            except NexecurAccountLockedError:
+                errors["base"] = "account_locked"
             except NexecurAuthError:
                 errors["base"] = "auth"
+            except NexecurUnavailableError:
+                # Nothing proves the PIN is wrong: the service or the panel is down.
+                errors["base"] = "service_unavailable"
             except Exception:
                 errors["base"] = "unknown"
             else:
