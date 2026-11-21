@@ -181,9 +181,6 @@ class NexecurOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
-            description_placeholders={
-                "hint": "Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires."
-            }
         )
 
 
