@@ -19,7 +19,7 @@
           "arm_code": "Code d'activation (facultatif)",
           "invert_status": "Inverser le statut (si SP1/SP2 inversé)"
         },
-        "data_desc": {
+        "data_description": {
           "disarm_code": "Une fois défini, ce code ne pourra plus être modifié ou supprimé sans supprimer l'intégration.",
           "arm_code": "Ce code peut être ajouté ou modifié à tout moment via les options.",
           "invert_status": "Cochez si vos statuts Home et Away sont inversés (SP1=Complet, SP2=Nuit)"
@@ -65,7 +65,9 @@
       "auth": "Échec de l'authentification",
       "unknown": "Erreur inconnue",
       "invalid_sms_code": "Code incorrect ou expiré. Vérifiez le message reçu et réessayez.",
-      "code_request_failed": "Impossible de demander un code de vérification au cloud. Réessayez dans quelques minutes."
+      "code_request_failed": "Impossible de demander un code de vérification au cloud. Réessayez dans quelques minutes.",
+      "account_locked": "Le compte Nexecur est temporairement verrouillé. Patientez avant de réessayer.",
+      "service_unavailable": "Le service Nexecur ou la centrale est indisponible. Réessayez plus tard."
     },
     "abort": {
       "reauth_successful": "Home Assistant est maintenant autorisé sur votre compte Nexecur."
@@ -75,10 +77,7 @@
     "step": {
       "init": {
         "title": "Options Nexecur",
-        "description": "Gérer les codes de l'alarme",
-        "description_placeholders": {
-          "hint": "Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires."
-        },
+        "description": "Gérer les codes de l'alarme. Cliquez sur Valider après avoir modifié une option pour voir les champs supplémentaires.",
         "data": {
           "enable_disarm": "Activer le code de désarmement",
           "enable_arm": "Activer le code d'armement",
@@ -88,10 +87,6 @@
           "disarm_info": "État du code de désarmement",
           "arm_info": "État du code d'armement",
           "invert_status": "Inverser le statut (si SP1/SP2 inversé)"
-        },
-        "data_options": {
-          "yes": "Oui",
-          "no": "Non"
         }
       }
     }

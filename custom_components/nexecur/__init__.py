@@ -27,6 +27,7 @@ from .const import (
     CONF_RF_SESSION_ID,
     CONF_USER_INFO,
     CONF_API_DOMAIN,
+    CONF_INVERT_STATUS,
     ALARM_VERSION_VIDEOFIED,
     ALARM_VERSION_HIKVISION,
 )
@@ -283,16 +284,28 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     """Migrate old entry to new version."""
     _LOGGER.debug("Migrating from version %s", config_entry.version)
 
-    if config_entry.version == 1:
+    new_data = {**config_entry.data}
+    version = config_entry.version
+
+    if version == 1:
         # Migration from version 1 to 2: add alarm_version field
-        new_data = {**config_entry.data}
         if CONF_ALARM_VERSION not in new_data:
             # Existing entries are Videofied
             new_data[CONF_ALARM_VERSION] = ALARM_VERSION_VIDEOFIED
+        version = 2
 
+    if version == 2:
+        # Version 3 maps the documented NEXECUR statuses (1 = full arming,
+        # 2 = partial 1, 3 = partial 2), which is what "invert status" used to
+        # produce by hand. Sites that needed the option are now the default.
+        if new_data.get(CONF_INVERT_STATUS):
+            new_data[CONF_INVERT_STATUS] = False
+        version = 3
+
+    if version != config_entry.version:
         hass.config_entries.async_update_entry(
-            config_entry, data=new_data, version=2
+            config_entry, data=new_data, version=version
         )
-        _LOGGER.info("Migration to version 2 successful")
+        _LOGGER.info("Migration to version %s successful", version)
 
     return True
